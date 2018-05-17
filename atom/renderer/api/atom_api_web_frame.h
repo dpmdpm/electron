@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "atom/renderer/guest_view_container.h"
 #include "native_mate/handle.h"
@@ -18,8 +19,9 @@ class WebLocalFrame;
 }
 
 namespace mate {
+class Dictionary;
 class Arguments;
-}
+}  // namespace mate
 
 namespace atom {
 
@@ -36,6 +38,7 @@ class WebFrame : public mate::Wrappable<WebFrame> {
 
  private:
   explicit WebFrame(v8::Isolate* isolate);
+  explicit WebFrame(v8::Isolate* isolate, blink::WebLocalFrame* blink_frame);
   ~WebFrame() override;
 
   void SetName(const std::string& name);
@@ -49,7 +52,8 @@ class WebFrame : public mate::Wrappable<WebFrame> {
   void SetLayoutZoomLevelLimits(double min_level, double max_level);
 
   v8::Local<v8::Value> RegisterEmbedderCustomElement(
-      const base::string16& name, v8::Local<v8::Object> options);
+      const base::string16& name,
+      v8::Local<v8::Object> options);
   void RegisterElementResizeCallback(
       int element_instance_id,
       const GuestViewContainer::ResizeCallback& callback);
@@ -71,12 +75,35 @@ class WebFrame : public mate::Wrappable<WebFrame> {
   void InsertText(const std::string& text);
   void InsertCSS(const std::string& css);
 
-  // Excecuting scripts.
+  // Executing scripts.
   void ExecuteJavaScript(const base::string16& code, mate::Arguments* args);
+  void ExecuteJavaScriptInIsolatedWorld(
+      int world_id,
+      const std::vector<mate::Dictionary>& scripts,
+      mate::Arguments* args);
+
+  // Isolated world related methods
+  void SetIsolatedWorldSecurityOrigin(int world_id,
+                                      const std::string& origin_url);
+  void SetIsolatedWorldContentSecurityPolicy(
+      int world_id,
+      const std::string& security_policy);
+  void SetIsolatedWorldHumanReadableName(int world_id, const std::string& name);
 
   // Resource related methods
   blink::WebCache::ResourceTypeStats GetResourceUsage(v8::Isolate* isolate);
   void ClearCache(v8::Isolate* isolate);
+
+  // Frame navigation
+  v8::Local<v8::Value> Opener() const;
+  v8::Local<v8::Value> Parent() const;
+  v8::Local<v8::Value> Top() const;
+  v8::Local<v8::Value> FirstChild() const;
+  v8::Local<v8::Value> NextSibling() const;
+  v8::Local<v8::Value> GetFrameForSelector(const std::string& selector) const;
+  v8::Local<v8::Value> FindFrameByName(const std::string& name) const;
+  v8::Local<v8::Value> FindFrameByRoutingId(int routing_id) const;
+  v8::Local<v8::Value> RoutingId() const;
 
   std::unique_ptr<SpellCheckClient> spell_check_client_;
 

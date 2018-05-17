@@ -11,6 +11,7 @@
 #include "base/mac/mac_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
+#include "ui/gfx/image/image_skia.h"
 
 @interface ModalDelegate : NSObject {
  @private
@@ -140,13 +141,13 @@ int ShowMessageBox(NativeWindow* parent_window,
                    const std::string& message,
                    const std::string& detail,
                    const gfx::ImageSkia& icon) {
-  NSAlert* alert = CreateNSAlert(parent_window, type, buttons, default_id,
-                                 cancel_id, title, message, detail, "", false,
-                                 icon);
+  NSAlert* alert =
+      CreateNSAlert(parent_window, type, buttons, default_id, cancel_id, title,
+                    message, detail, "", false, icon);
 
   // Use runModal for synchronous alert without parent, since we don't have a
   // window to wait for.
-  if (!parent_window || !parent_window->GetNativeWindow())
+  if (!parent_window)
     return [[alert autorelease] runModal];
 
   int ret_code = -1;
@@ -181,15 +182,24 @@ void ShowMessageBox(NativeWindow* parent_window,
   NSAlert* alert =
       CreateNSAlert(parent_window, type, buttons, default_id, cancel_id, title,
                     message, detail, checkbox_label, checkbox_checked, icon);
-  ModalDelegate* delegate = [[ModalDelegate alloc] initWithCallback:callback
-                                                           andAlert:alert
-                                                       callEndModal:false];
 
-  NSWindow* window = parent_window ? parent_window->GetNativeWindow() : nil;
-  [alert beginSheetModalForWindow:window
-                    modalDelegate:delegate
-                   didEndSelector:@selector(alertDidEnd:returnCode:contextInfo:)
-                      contextInfo:nil];
+  // Use runModal for synchronous alert without parent, since we don't have a
+  // window to wait for.
+  if (!parent_window) {
+    int ret = [[alert autorelease] runModal];
+    callback.Run(ret, alert.suppressionButton.state == NSOnState);
+  } else {
+    ModalDelegate* delegate = [[ModalDelegate alloc] initWithCallback:callback
+                                                             andAlert:alert
+                                                         callEndModal:false];
+
+    NSWindow* window = parent_window ? parent_window->GetNativeWindow() : nil;
+    [alert
+        beginSheetModalForWindow:window
+                   modalDelegate:delegate
+                  didEndSelector:@selector(alertDidEnd:returnCode:contextInfo:)
+                     contextInfo:nil];
+  }
 }
 
 void ShowErrorBox(const base::string16& title, const base::string16& content) {

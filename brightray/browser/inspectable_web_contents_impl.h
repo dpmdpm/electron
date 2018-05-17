@@ -29,18 +29,18 @@ namespace brightray {
 class InspectableWebContentsDelegate;
 class InspectableWebContentsView;
 
-class InspectableWebContentsImpl :
-    public InspectableWebContents,
-    public content::DevToolsAgentHostClient,
-    public content::WebContentsObserver,
-    public content::WebContentsDelegate,
-    public DevToolsEmbedderMessageDispatcher::Delegate,
-    public net::URLFetcherDelegate {
+class InspectableWebContentsImpl
+    : public InspectableWebContents,
+      public content::DevToolsAgentHostClient,
+      public content::WebContentsObserver,
+      public content::WebContentsDelegate,
+      public DevToolsEmbedderMessageDispatcher::Delegate,
+      public net::URLFetcherDelegate {
  public:
   static void RegisterPrefs(PrefRegistrySimple* pref_registry);
 
   explicit InspectableWebContentsImpl(content::WebContents*);
-  virtual ~InspectableWebContentsImpl();
+  ~InspectableWebContentsImpl() override;
 
   InspectableWebContentsView* GetView() const override;
   content::WebContents* GetWebContents() const override;
@@ -48,6 +48,7 @@ class InspectableWebContentsImpl :
 
   void SetDelegate(InspectableWebContentsDelegate* delegate) override;
   InspectableWebContentsDelegate* GetDelegate() const override;
+  void SetDevToolsWebContents(content::WebContents* devtools) override;
   void SetDockState(const std::string& state) override;
   void ShowDevTools() override;
   void CloseDevTools() override;
@@ -113,6 +114,8 @@ class InspectableWebContentsImpl :
                      const std::string& value) override;
   void RemovePreference(const std::string& name) override;
   void ClearPreferences() override;
+  void RegisterExtensionsAPI(const std::string& origin,
+                             const std::string& script) override;
 
   // content::DevToolsFrontendHostDelegate:
   void HandleMessageFromDevToolsFrontend(const std::string& message);
@@ -127,10 +130,12 @@ class InspectableWebContentsImpl :
   void RenderFrameHostChanged(content::RenderFrameHost* old_host,
                               content::RenderFrameHost* new_host) override;
   void WebContentsDestroyed() override;
-  void OnWebContentsFocused() override;
-  void DidStartNavigationToPendingEntry(
-      const GURL& url,
-      content::ReloadType reload_type) override;
+  void OnWebContentsFocused(
+      content::RenderWidgetHost* render_widget_host) override;
+  void ReadyToCommitNavigation(
+      content::NavigationHandle* navigation_handle) override;
+  void DidFinishNavigation(
+      content::NavigationHandle* navigation_handle) override;
 
   // content::WebContentsDelegate:
   bool DidAddMessageToConsole(content::WebContents* source,
@@ -140,6 +145,7 @@ class InspectableWebContentsImpl :
                               const base::string16& source_id) override;
   bool ShouldCreateWebContents(
       content::WebContents* web_contents,
+      content::RenderFrameHost* opener,
       content::SiteInstance* source_site_instance,
       int32_t route_id,
       int32_t main_frame_route_id,
@@ -150,8 +156,8 @@ class InspectableWebContentsImpl :
       const GURL& target_url,
       const std::string& partition_id,
       content::SessionStorageNamespace* session_storage_namespace) override;
-  void HandleKeyboardEvent(
-      content::WebContents*, const content::NativeWebKeyboardEvent&) override;
+  void HandleKeyboardEvent(content::WebContents*,
+                           const content::NativeWebKeyboardEvent&) override;
   void CloseContents(content::WebContents* source) override;
   content::ColorChooser* OpenColorChooser(
       content::WebContents* source,
@@ -166,8 +172,7 @@ class InspectableWebContentsImpl :
   // net::URLFetcherDelegate:
   void OnURLFetchComplete(const net::URLFetcher* source) override;
 
-  void SendMessageAck(int request_id,
-                      const base::Value* arg1);
+  void SendMessageAck(int request_id, const base::Value* arg1);
 
   bool frontend_loaded_;
   scoped_refptr<content::DevToolsAgentHost> agent_host_;
@@ -187,8 +192,17 @@ class InspectableWebContentsImpl :
   PrefService* pref_service_;  // weak reference.
 
   std::unique_ptr<content::WebContents> web_contents_;
-  std::unique_ptr<content::WebContents> devtools_web_contents_;
+
+  // The default devtools created by this class when we don't have an external
+  // one assigned by SetDevToolsWebContents.
+  std::unique_ptr<content::WebContents> managed_devtools_web_contents_;
+  // The external devtools assigned by SetDevToolsWebContents.
+  content::WebContents* external_devtools_web_contents_ = nullptr;
+
   std::unique_ptr<InspectableWebContentsView> view_;
+
+  using ExtensionsAPIs = std::map<std::string, std::string>;
+  ExtensionsAPIs extensions_api_;
 
   base::WeakPtrFactory<InspectableWebContentsImpl> weak_factory_;
 

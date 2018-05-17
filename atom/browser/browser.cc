@@ -11,12 +11,20 @@
 #include "atom/browser/native_window.h"
 #include "atom/browser/window_list.h"
 #include "base/files/file_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "brightray/browser/brightray_paths.h"
+#include "brightray/common/application_info.h"
 
 namespace atom {
+
+Browser::LoginItemSettings::LoginItemSettings() = default;
+Browser::LoginItemSettings::~LoginItemSettings() = default;
+Browser::LoginItemSettings::LoginItemSettings(
+    const LoginItemSettings& other) = default;
 
 Browser::Browser()
     : is_quiting_(false),
@@ -94,31 +102,25 @@ void Browser::Shutdown() {
 }
 
 std::string Browser::GetVersion() const {
-  if (version_override_.empty()) {
-    std::string version = GetExecutableFileVersion();
-    if (!version.empty())
-      return version;
-  }
-
-  return version_override_;
+  std::string ret = brightray::GetOverriddenApplicationVersion();
+  if (ret.empty())
+    ret = GetExecutableFileVersion();
+  return ret;
 }
 
 void Browser::SetVersion(const std::string& version) {
-  version_override_ = version;
+  brightray::OverrideApplicationVersion(version);
 }
 
 std::string Browser::GetName() const {
-  if (name_override_.empty()) {
-    std::string name = GetExecutableFileProductName();
-    if (!name.empty())
-      return name;
-  }
-
-  return name_override_;
+  std::string ret = brightray::GetOverriddenApplicationName();
+  if (ret.empty())
+    ret = GetExecutableFileProductName();
+  return ret;
 }
 
 void Browser::SetName(const std::string& name) {
-  name_override_ = name;
+  brightray::OverrideApplicationName(name);
 }
 
 int Browser::GetBadgeCount() {
@@ -150,6 +152,7 @@ void Browser::WillFinishLaunching() {
 
 void Browser::DidFinishLaunching(const base::DictionaryValue& launch_info) {
   // Make sure the userData directory is created.
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
   base::FilePath user_data;
   if (PathService::Get(brightray::DIR_USER_DATA, &user_data))
     base::CreateDirectoryAndGetError(user_data, nullptr);
@@ -169,6 +172,12 @@ void Browser::RequestLogin(
     std::unique_ptr<base::DictionaryValue> request_details) {
   for (BrowserObserver& observer : observers_)
     observer.OnLogin(login_handler, *(request_details.get()));
+}
+
+void Browser::PreMainMessageLoopRun() {
+  for (BrowserObserver& observer : observers_) {
+    observer.OnPreMainMessageLoopRun();
+  }
 }
 
 void Browser::NotifyAndShutdown() {

@@ -5,11 +5,10 @@
 #include "atom/browser/net/atom_cert_verifier.h"
 
 #include "atom/browser/browser.h"
-#include "atom/browser/net/atom_ct_delegate.h"
 #include "atom/common/native_mate_converters/net_converter.h"
 #include "base/containers/linked_list.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
+#include "brightray/browser/net/require_ct_delegate.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_errors.h"
 #include "net/cert/cert_verify_result.h"
@@ -19,6 +18,10 @@
 using content::BrowserThread;
 
 namespace atom {
+
+VerifyRequestParams::VerifyRequestParams() = default;
+VerifyRequestParams::~VerifyRequestParams() = default;
+VerifyRequestParams::VerifyRequestParams(const VerifyRequestParams&) = default;
 
 namespace {
 
@@ -76,8 +79,7 @@ class CertVerifierRequest : public AtomCertVerifier::Request {
     delete response;
   }
 
-  void Start(net::CRLSet* crl_set,
-             const net::NetLogWithSource& net_log) {
+  void Start(net::CRLSet* crl_set, const net::NetLogWithSource& net_log) {
     int error = cert_verifier_->default_verifier()->Verify(
         params_, crl_set, &result_,
         base::Bind(&CertVerifierRequest::OnDefaultVerificationDone,
@@ -92,26 +94,29 @@ class CertVerifierRequest : public AtomCertVerifier::Request {
     std::unique_ptr<VerifyRequestParams> request(new VerifyRequestParams());
     request->hostname = params_.hostname();
     request->default_result = net::ErrorToString(error);
+    request->error_code = error;
     request->certificate = params_.certificate();
+    auto response_callback = base::Bind(&CertVerifierRequest::OnResponseInUI,
+                                        weak_ptr_factory_.GetWeakPtr());
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::Bind(&CertVerifierRequest::OnVerifyRequestInUI,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   cert_verifier_->verify_proc(),
-                   base::Passed(&request)));
+        base::BindOnce(&CertVerifierRequest::OnVerifyRequestInUI,
+                       cert_verifier_->verify_proc(), std::move(request),
+                       response_callback));
   }
 
-  void OnVerifyRequestInUI(const AtomCertVerifier::VerifyProc& verify_proc,
-                           std::unique_ptr<VerifyRequestParams> request) {
-    verify_proc.Run(*(request.get()),
-                    base::Bind(&CertVerifierRequest::OnResponseInUI,
-                               weak_ptr_factory_.GetWeakPtr()));
+  static void OnVerifyRequestInUI(
+      const AtomCertVerifier::VerifyProc& verify_proc,
+      std::unique_ptr<VerifyRequestParams> request,
+      const base::Callback<void(int)>& response_callback) {
+    verify_proc.Run(*(request.get()), response_callback);
   }
 
-  void OnResponseInUI(int result) {
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                            base::Bind(&CertVerifierRequest::NotifyResponseInIO,
-                                       weak_ptr_factory_.GetWeakPtr(), result));
+  static void OnResponseInUI(base::WeakPtr<CertVerifierRequest> self,
+                             int result) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::BindOnce(&CertVerifierRequest::NotifyResponseInIO, self, result));
   }
 
   void NotifyResponseInIO(int result) {
@@ -146,7 +151,7 @@ class CertVerifierRequest : public AtomCertVerifier::Request {
   base::WeakPtrFactory<CertVerifierRequest> weak_ptr_factory_;
 };
 
-AtomCertVerifier::AtomCertVerifier(AtomCTDelegate* ct_delegate)
+AtomCertVerifier::AtomCertVerifier(brightray::RequireCTDelegate* ct_delegate)
     : default_cert_verifier_(net::CertVerifier::CreateDefault()),
       ct_delegate_(ct_delegate) {}
 
@@ -156,13 +161,12 @@ void AtomCertVerifier::SetVerifyProc(const VerifyProc& proc) {
   verify_proc_ = proc;
 }
 
-int AtomCertVerifier::Verify(
-    const RequestParams& params,
-    net::CRLSet* crl_set,
-    net::CertVerifyResult* verify_result,
-    const net::CompletionCallback& callback,
-    std::unique_ptr<Request>* out_req,
-    const net::NetLogWithSource& net_log) {
+int AtomCertVerifier::Verify(const RequestParams& params,
+                             net::CRLSet* crl_set,
+                             net::CertVerifyResult* verify_result,
+                             const net::CompletionCallback& callback,
+                             std::unique_ptr<Request>* out_req,
+                             const net::NetLogWithSource& net_log) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (verify_proc_.is_null()) {
@@ -174,7 +178,7 @@ int AtomCertVerifier::Verify(
     if (!request) {
       out_req->reset();
       std::unique_ptr<CertVerifierRequest> new_request =
-          base::MakeUnique<CertVerifierRequest>(params, this);
+          std::make_unique<CertVerifierRequest>(params, this);
       new_request->Start(crl_set, net_log);
       request = new_request.get();
       *out_req = std::move(new_request);

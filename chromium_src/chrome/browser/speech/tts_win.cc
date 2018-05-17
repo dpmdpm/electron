@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <math.h>
+#include <objbase.h>
 #include <sapi.h>
 
 #include "base/memory/singleton.h"
@@ -15,16 +16,13 @@
 
 class TtsPlatformImplWin : public TtsPlatformImpl {
  public:
-  bool PlatformImplAvailable() override {
-    return true;
-  }
+  bool PlatformImplAvailable() override { return true; }
 
-  bool Speak(
-      int utterance_id,
-      const std::string& utterance,
-      const std::string& lang,
-      const VoiceData& voice,
-      const UtteranceContinuousParameters& params) override;
+  bool Speak(int utterance_id,
+             const std::string& utterance,
+             const std::string& lang,
+             const VoiceData& voice,
+             const UtteranceContinuousParameters& params) override;
 
   bool StopSpeaking() override;
 
@@ -67,16 +65,15 @@ TtsPlatformImpl* TtsPlatformImpl::GetInstance() {
   return TtsPlatformImplWin::GetInstance();
 }
 
-bool TtsPlatformImplWin::Speak(
-    int utterance_id,
-    const std::string& src_utterance,
-    const std::string& lang,
-    const VoiceData& voice,
-    const UtteranceContinuousParameters& params) {
+bool TtsPlatformImplWin::Speak(int utterance_id,
+                               const std::string& src_utterance,
+                               const std::string& lang,
+                               const VoiceData& voice,
+                               const UtteranceContinuousParameters& params) {
   std::wstring prefix;
   std::wstring suffix;
 
-  if (!speech_synthesizer_.get())
+  if (!speech_synthesizer_.Get())
     return false;
 
   // TODO(dmazzoni): support languages other than the default: crbug.com/88059
@@ -113,15 +110,13 @@ bool TtsPlatformImplWin::Speak(
   std::wstring merged_utterance = prefix + utterance_ + suffix;
   prefix_len_ = prefix.size();
 
-  HRESULT result = speech_synthesizer_->Speak(
-      merged_utterance.c_str(),
-      SPF_ASYNC,
-      &stream_number_);
+  HRESULT result = speech_synthesizer_->Speak(merged_utterance.c_str(),
+                                              SPF_ASYNC, &stream_number_);
   return (result == S_OK);
 }
 
 bool TtsPlatformImplWin::StopSpeaking() {
-  if (speech_synthesizer_.get()) {
+  if (speech_synthesizer_.Get()) {
     // Clear the stream number so that any further events relating to this
     // utterance are ignored.
     stream_number_ = 0;
@@ -139,25 +134,25 @@ bool TtsPlatformImplWin::StopSpeaking() {
 }
 
 void TtsPlatformImplWin::Pause() {
-  if (speech_synthesizer_.get() && utterance_id_ && !paused_) {
+  if (speech_synthesizer_.Get() && utterance_id_ && !paused_) {
     speech_synthesizer_->Pause();
     paused_ = true;
-    TtsController::GetInstance()->OnTtsEvent(
-        utterance_id_, TTS_EVENT_PAUSE, char_position_, "");
+    TtsController::GetInstance()->OnTtsEvent(utterance_id_, TTS_EVENT_PAUSE,
+                                             char_position_, "");
   }
 }
 
 void TtsPlatformImplWin::Resume() {
-  if (speech_synthesizer_.get() && utterance_id_ && paused_) {
+  if (speech_synthesizer_.Get() && utterance_id_ && paused_) {
     speech_synthesizer_->Resume();
     paused_ = false;
-    TtsController::GetInstance()->OnTtsEvent(
-        utterance_id_, TTS_EVENT_RESUME, char_position_, "");
+    TtsController::GetInstance()->OnTtsEvent(utterance_id_, TTS_EVENT_RESUME,
+                                             char_position_, "");
   }
 }
 
 bool TtsPlatformImplWin::IsSpeaking() {
-  if (speech_synthesizer_.get()) {
+  if (speech_synthesizer_.Get()) {
     SPVOICESTATUS status;
     HRESULT result = speech_synthesizer_->GetStatus(&status, NULL);
     if (result == S_OK) {
@@ -170,8 +165,7 @@ bool TtsPlatformImplWin::IsSpeaking() {
   return false;
 }
 
-void TtsPlatformImplWin::GetVoices(
-    std::vector<VoiceData>* out_voices) {
+void TtsPlatformImplWin::GetVoices(std::vector<VoiceData>* out_voices) {
   // TODO: get all voices, not just default voice.
   // http://crbug.com/88059
   out_voices->push_back(VoiceData());
@@ -195,50 +189,47 @@ void TtsPlatformImplWin::OnSpeechEvent() {
       continue;
 
     switch (event.eEventId) {
-    case SPEI_START_INPUT_STREAM:
-      controller->OnTtsEvent(
-          utterance_id_, TTS_EVENT_START, 0, std::string());
-      break;
-    case SPEI_END_INPUT_STREAM:
-      char_position_ = utterance_.size();
-      controller->OnTtsEvent(
-          utterance_id_, TTS_EVENT_END, char_position_, std::string());
-      break;
-    case SPEI_TTS_BOOKMARK:
-      controller->OnTtsEvent(
-          utterance_id_, TTS_EVENT_MARKER, char_position_, std::string());
-      break;
-    case SPEI_WORD_BOUNDARY:
-      char_position_ = static_cast<ULONG>(event.lParam) - prefix_len_;
-      controller->OnTtsEvent(
-          utterance_id_, TTS_EVENT_WORD, char_position_,
-          std::string());
-      break;
-    case SPEI_SENTENCE_BOUNDARY:
-      char_position_ = static_cast<ULONG>(event.lParam) - prefix_len_;
-      controller->OnTtsEvent(
-          utterance_id_, TTS_EVENT_SENTENCE, char_position_,
-          std::string());
-      break;
-    default:
-      break;
+      case SPEI_START_INPUT_STREAM:
+        controller->OnTtsEvent(utterance_id_, TTS_EVENT_START, 0,
+                               std::string());
+        break;
+      case SPEI_END_INPUT_STREAM:
+        char_position_ = utterance_.size();
+        controller->OnTtsEvent(utterance_id_, TTS_EVENT_END, char_position_,
+                               std::string());
+        break;
+      case SPEI_TTS_BOOKMARK:
+        controller->OnTtsEvent(utterance_id_, TTS_EVENT_MARKER, char_position_,
+                               std::string());
+        break;
+      case SPEI_WORD_BOUNDARY:
+        char_position_ = static_cast<ULONG>(event.lParam) - prefix_len_;
+        controller->OnTtsEvent(utterance_id_, TTS_EVENT_WORD, char_position_,
+                               std::string());
+        break;
+      case SPEI_SENTENCE_BOUNDARY:
+        char_position_ = static_cast<ULONG>(event.lParam) - prefix_len_;
+        controller->OnTtsEvent(utterance_id_, TTS_EVENT_SENTENCE,
+                               char_position_, std::string());
+        break;
+      default:
+        break;
     }
   }
 }
 
 TtsPlatformImplWin::TtsPlatformImplWin()
-  : utterance_id_(0),
-    prefix_len_(0),
-    stream_number_(0),
-    char_position_(0),
-    paused_(false) {
-  speech_synthesizer_.CreateInstance(CLSID_SpVoice);
-  if (speech_synthesizer_.get()) {
+    : utterance_id_(0),
+      prefix_len_(0),
+      stream_number_(0),
+      char_position_(0),
+      paused_(false) {
+  ::CoCreateInstance(CLSID_SpVoice, nullptr, CLSCTX_ALL,
+                     IID_PPV_ARGS(&speech_synthesizer_));
+  if (speech_synthesizer_.Get()) {
     ULONGLONG event_mask =
-        SPFEI(SPEI_START_INPUT_STREAM) |
-        SPFEI(SPEI_TTS_BOOKMARK) |
-        SPFEI(SPEI_WORD_BOUNDARY) |
-        SPFEI(SPEI_SENTENCE_BOUNDARY) |
+        SPFEI(SPEI_START_INPUT_STREAM) | SPFEI(SPEI_TTS_BOOKMARK) |
+        SPFEI(SPEI_WORD_BOUNDARY) | SPFEI(SPEI_SENTENCE_BOUNDARY) |
         SPFEI(SPEI_END_INPUT_STREAM);
     speech_synthesizer_->SetInterest(event_mask, event_mask);
     speech_synthesizer_->SetNotifyCallbackFunction(
@@ -253,7 +244,6 @@ TtsPlatformImplWin* TtsPlatformImplWin::GetInstance() {
 }
 
 // static
-void TtsPlatformImplWin::SpeechEventCallback(
-    WPARAM w_param, LPARAM l_param) {
+void TtsPlatformImplWin::SpeechEventCallback(WPARAM w_param, LPARAM l_param) {
   GetInstance()->OnSpeechEvent();
 }

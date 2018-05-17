@@ -15,12 +15,12 @@
 #include "atom/common/native_mate_converters/string16_converter.h"
 #include "atom/common/native_mate_converters/ui_base_types_converter.h"
 #include "atom/common/native_mate_converters/value_converter.h"
-#include "content/common/resource_request_body_impl.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/context_menu_params.h"
+#include "content/public/common/resource_request_body.h"
 #include "native_mate/dictionary.h"
 
-using content::ResourceRequestBodyImpl;
+using content::ResourceRequestBody;
 
 namespace {
 
@@ -78,7 +78,8 @@ namespace mate {
 
 // static
 v8::Local<v8::Value> Converter<content::MenuItem::Type>::ToV8(
-    v8::Isolate* isolate, const content::MenuItem::Type& val) {
+    v8::Isolate* isolate,
+    const content::MenuItem::Type& val) {
   switch (val) {
     case content::MenuItem::CHECKABLE_OPTION:
       return StringToV8(isolate, "checkbox");
@@ -96,7 +97,8 @@ v8::Local<v8::Value> Converter<content::MenuItem::Type>::ToV8(
 
 // static
 v8::Local<v8::Value> Converter<ContextMenuParamsWithWebContents>::ToV8(
-    v8::Isolate* isolate, const ContextMenuParamsWithWebContents& val) {
+    v8::Isolate* isolate,
+    const ContextMenuParamsWithWebContents& val) {
   const auto& params = val.first;
   mate::Dictionary dict = mate::Dictionary::CreateEmpty(isolate);
   dict.Set("x", params.x);
@@ -109,8 +111,8 @@ v8::Local<v8::Value> Converter<ContextMenuParamsWithWebContents>::ToV8(
   dict.Set("mediaType", params.media_type);
   dict.Set("mediaFlags", MediaFlagsToV8(isolate, params.media_flags));
   bool has_image_contents =
-    (params.media_type == blink::WebContextMenuData::kMediaTypeImage) &&
-    params.has_image_contents;
+      (params.media_type == blink::WebContextMenuData::kMediaTypeImage) &&
+      params.has_image_contents;
   dict.Set("hasImageContents", has_image_contents);
   dict.Set("isEditable", params.is_editable);
   dict.Set("editFlags", EditFlagsToV8(isolate, params.edit_flags));
@@ -119,7 +121,7 @@ v8::Local<v8::Value> Converter<ContextMenuParamsWithWebContents>::ToV8(
   dict.Set("misspelledWord", params.misspelled_word);
   dict.Set("frameCharset", params.frame_charset);
   dict.Set("inputFieldType", params.input_field_type);
-  dict.Set("menuSourceType",  params.source_type);
+  dict.Set("menuSourceType", params.source_type);
 
   if (params.custom_context.is_pepper_menu)
     dict.Set("menu", MenuToV8(isolate, val.second, params.custom_context,
@@ -146,7 +148,8 @@ bool Converter<blink::mojom::PermissionStatus>::FromV8(
 
 // static
 v8::Local<v8::Value> Converter<content::PermissionType>::ToV8(
-    v8::Isolate* isolate, const content::PermissionType& val) {
+    v8::Isolate* isolate,
+    const content::PermissionType& val) {
   using PermissionType = atom::WebContentsPermissionHelper::PermissionType;
   switch (val) {
     case content::PermissionType::MIDI_SYSEX:
@@ -181,10 +184,9 @@ v8::Local<v8::Value> Converter<content::PermissionType>::ToV8(
 }
 
 // static
-bool Converter<content::StopFindAction>::FromV8(
-    v8::Isolate* isolate,
-    v8::Local<v8::Value> val,
-    content::StopFindAction* out) {
+bool Converter<content::StopFindAction>::FromV8(v8::Isolate* isolate,
+                                                v8::Local<v8::Value> val,
+                                                content::StopFindAction* out) {
   std::string action;
   if (!ConvertFromV8(isolate, val, &action))
     return false;
@@ -202,10 +204,9 @@ bool Converter<content::StopFindAction>::FromV8(
 }
 
 // static
-v8::Local<v8::Value>
-Converter<scoped_refptr<ResourceRequestBodyImpl>>::ToV8(
+v8::Local<v8::Value> Converter<scoped_refptr<ResourceRequestBody>>::ToV8(
     v8::Isolate* isolate,
-    const scoped_refptr<ResourceRequestBodyImpl>& val) {
+    const scoped_refptr<ResourceRequestBody>& val) {
   if (!val)
     return v8::Null(isolate);
   std::unique_ptr<base::ListValue> list(new base::ListValue);
@@ -213,29 +214,28 @@ Converter<scoped_refptr<ResourceRequestBodyImpl>>::ToV8(
     std::unique_ptr<base::DictionaryValue> post_data_dict(
         new base::DictionaryValue);
     auto type = element.type();
-    if (type == ResourceRequestBodyImpl::Element::TYPE_BYTES) {
-      std::unique_ptr<base::Value> bytes(
-          base::Value::CreateWithCopiedBuffer(
-              element.bytes(), static_cast<size_t>(element.length())));
+    if (type == ResourceRequestBody::Element::TYPE_BYTES) {
+      std::unique_ptr<base::Value> bytes(base::Value::CreateWithCopiedBuffer(
+          element.bytes(), static_cast<size_t>(element.length())));
       post_data_dict->SetString("type", "rawData");
       post_data_dict->Set("bytes", std::move(bytes));
-    } else if (type == ResourceRequestBodyImpl::Element::TYPE_FILE) {
+    } else if (type == ResourceRequestBody::Element::TYPE_FILE) {
       post_data_dict->SetString("type", "file");
-      post_data_dict->SetStringWithoutPathExpansion(
-          "filePath", element.path().AsUTF8Unsafe());
+      post_data_dict->SetKey("filePath",
+                             base::Value(element.path().AsUTF8Unsafe()));
       post_data_dict->SetInteger("offset", static_cast<int>(element.offset()));
       post_data_dict->SetInteger("length", static_cast<int>(element.length()));
       post_data_dict->SetDouble(
           "modificationTime", element.expected_modification_time().ToDoubleT());
-    } else if (type == ResourceRequestBodyImpl::Element::TYPE_FILE_FILESYSTEM) {
+    } else if (type == ResourceRequestBody::Element::TYPE_FILE_FILESYSTEM) {
       post_data_dict->SetString("type", "fileSystem");
-      post_data_dict->SetStringWithoutPathExpansion(
-          "fileSystemURL", element.filesystem_url().spec());
+      post_data_dict->SetKey("fileSystemURL",
+                             base::Value(element.filesystem_url().spec()));
       post_data_dict->SetInteger("offset", static_cast<int>(element.offset()));
       post_data_dict->SetInteger("length", static_cast<int>(element.length()));
       post_data_dict->SetDouble(
           "modificationTime", element.expected_modification_time().ToDoubleT());
-    } else if (type == ResourceRequestBodyImpl::Element::TYPE_BLOB) {
+    } else if (type == ResourceRequestBody::Element::TYPE_BLOB) {
       post_data_dict->SetString("type", "blob");
       post_data_dict->SetString("blobUUID", element.blob_uuid());
     }
@@ -245,14 +245,14 @@ Converter<scoped_refptr<ResourceRequestBodyImpl>>::ToV8(
 }
 
 // static
-bool Converter<scoped_refptr<ResourceRequestBodyImpl>>::FromV8(
+bool Converter<scoped_refptr<ResourceRequestBody>>::FromV8(
     v8::Isolate* isolate,
     v8::Local<v8::Value> val,
-    scoped_refptr<ResourceRequestBodyImpl>* out) {
+    scoped_refptr<ResourceRequestBody>* out) {
   std::unique_ptr<base::ListValue> list(new base::ListValue);
   if (!ConvertFromV8(isolate, val, list.get()))
     return false;
-  *out = new content::ResourceRequestBodyImpl();
+  *out = new content::ResourceRequestBody();
   for (size_t i = 0; i < list->GetSize(); ++i) {
     base::DictionaryValue* dict = nullptr;
     std::string type;
@@ -262,7 +262,7 @@ bool Converter<scoped_refptr<ResourceRequestBodyImpl>>::FromV8(
     if (type == "rawData") {
       base::Value* bytes = nullptr;
       dict->GetBinary("bytes", &bytes);
-      (*out)->AppendBytes(bytes->GetBuffer(), bytes->GetSize());
+      (*out)->AppendBytes(bytes->GetBlob().data(), bytes->GetBlob().size());
     } else if (type == "file") {
       std::string file;
       int offset = 0, length = -1;
@@ -284,8 +284,7 @@ bool Converter<scoped_refptr<ResourceRequestBodyImpl>>::FromV8(
       dict->GetInteger("file", &length);
       dict->GetDouble("modificationTime", &modification_time);
       (*out)->AppendFileSystemFileRange(
-          GURL(file_system_url),
-          static_cast<uint64_t>(offset),
+          GURL(file_system_url), static_cast<uint64_t>(offset),
           static_cast<uint64_t>(length),
           base::Time::FromDoubleT(modification_time));
     } else if (type == "blob") {
@@ -299,22 +298,49 @@ bool Converter<scoped_refptr<ResourceRequestBodyImpl>>::FromV8(
 
 // static
 v8::Local<v8::Value> Converter<content::WebContents*>::ToV8(
-    v8::Isolate* isolate, content::WebContents* val) {
+    v8::Isolate* isolate,
+    content::WebContents* val) {
   if (!val)
     return v8::Null(isolate);
   return atom::api::WebContents::CreateFrom(isolate, val).ToV8();
 }
 
 // static
-bool Converter<content::WebContents*>::FromV8(
-    v8::Isolate* isolate,
-    v8::Local<v8::Value> val,
-    content::WebContents** out) {
+bool Converter<content::WebContents*>::FromV8(v8::Isolate* isolate,
+                                              v8::Local<v8::Value> val,
+                                              content::WebContents** out) {
   atom::api::WebContents* web_contents = nullptr;
   if (!ConvertFromV8(isolate, val, &web_contents) || !web_contents)
     return false;
 
   *out = web_contents->web_contents();
+  return true;
+}
+
+// static
+v8::Local<v8::Value> Converter<content::Referrer>::ToV8(
+    v8::Isolate* isolate,
+    const content::Referrer& val) {
+  mate::Dictionary dict = mate::Dictionary::CreateEmpty(isolate);
+  dict.Set("url", ConvertToV8(isolate, val.url));
+  dict.Set("policy", ConvertToV8(isolate, val.policy));
+  return mate::ConvertToV8(isolate, dict);
+}
+
+// static
+bool Converter<content::Referrer>::FromV8(v8::Isolate* isolate,
+                                          v8::Local<v8::Value> val,
+                                          content::Referrer* out) {
+  mate::Dictionary dict;
+  if (!ConvertFromV8(isolate, val, &dict))
+    return false;
+
+  if (!dict.Get("url", &out->url))
+    return false;
+
+  if (!dict.Get("policy", &out->policy))
+    return false;
+
   return true;
 }
 

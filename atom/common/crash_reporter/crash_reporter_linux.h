@@ -13,13 +13,14 @@
 #include "base/compiler_specific.h"
 
 namespace base {
-template <typename T> struct DefaultSingletonTraits;
+template <typename T>
+struct DefaultSingletonTraits;
 }
 
 namespace google_breakpad {
 class ExceptionHandler;
 class MinidumpDescriptor;
-}
+}  // namespace google_breakpad
 
 namespace crash_reporter {
 
@@ -42,7 +43,7 @@ class CrashReporterLinux : public CrashReporter {
   friend struct base::DefaultSingletonTraits<CrashReporterLinux>;
 
   CrashReporterLinux();
-  virtual ~CrashReporterLinux();
+  ~CrashReporterLinux() override;
 
   void EnableCrashDumping(const base::FilePath& crashes_dir);
 

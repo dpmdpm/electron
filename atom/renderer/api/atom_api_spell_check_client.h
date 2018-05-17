@@ -9,31 +9,34 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/renderer/spellchecker/spellcheck_worditerator.h"
 #include "native_mate/scoped_persistent.h"
+#include "third_party/WebKit/public/platform/WebSpellCheckPanelHostClient.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebSpellCheckClient.h"
 #include "third_party/WebKit/public/web/WebTextCheckClient.h"
 
 namespace blink {
 struct WebTextCheckingResult;
 class WebTextCheckingCompletion;
-}
+}  // namespace blink
 
 namespace atom {
 
 namespace api {
 
-class SpellCheckClient : public blink::WebSpellCheckClient,
-                         public blink::WebTextCheckClient {
+class SpellCheckClient : public blink::WebSpellCheckPanelHostClient,
+                         public blink::WebTextCheckClient,
+                         public base::SupportsWeakPtr<SpellCheckClient> {
  public:
   SpellCheckClient(const std::string& language,
                    bool auto_spell_correct_turned_on,
                    v8::Isolate* isolate,
                    v8::Local<v8::Object> provider);
-  virtual ~SpellCheckClient();
+  ~SpellCheckClient() override;
 
  private:
+  class SpellcheckRequest;
   // blink::WebTextCheckClient:
   void CheckSpelling(
       const blink::WebString& text,
@@ -44,11 +47,21 @@ class SpellCheckClient : public blink::WebSpellCheckClient,
       const blink::WebString& textToCheck,
       blink::WebTextCheckingCompletion* completionCallback) override;
 
-  // blink::WebSpellCheckClient:
+  // blink::WebSpellCheckPanelHostClient:
   void ShowSpellingUI(bool show) override;
   bool IsShowingSpellingUI() override;
   void UpdateSpellingUIWithMisspelledWord(
       const blink::WebString& word) override;
+
+  struct SpellCheckScope {
+    v8::HandleScope handle_scope_;
+    v8::Context::Scope context_scope_;
+    v8::Local<v8::Object> provider_;
+    v8::Local<v8::Function> spell_check_;
+
+    explicit SpellCheckScope(const SpellCheckClient& client);
+    ~SpellCheckScope();
+  };
 
   // Check the spelling of text.
   void SpellCheckText(const base::string16& text,
@@ -56,16 +69,16 @@ class SpellCheckClient : public blink::WebSpellCheckClient,
                       std::vector<blink::WebTextCheckingResult>* results);
 
   // Call JavaScript to check spelling a word.
-  bool SpellCheckWord(const base::string16& word_to_check);
-
-  // Find a possible correctly spelled word for a misspelled word. Computes an
-  // empty string if input misspelled word is too long, there is ambiguity, or
-  // the correct spelling cannot be determined.
-  base::string16 GetAutoCorrectionWord(const base::string16& word);
+  bool SpellCheckWord(const SpellCheckScope& scope,
+                      const base::string16& word_to_check) const;
 
   // Returns whether or not the given word is a contraction of valid words
   // (e.g. "word:word").
-  bool IsValidContraction(const base::string16& word);
+  bool IsValidContraction(const SpellCheckScope& scope,
+                          const base::string16& word);
+
+  // Performs spell checking from the request queue.
+  void PerformSpellCheck(SpellcheckRequest* param);
 
   // Represents character attributes used for filtering out characters which
   // are not supported by this SpellCheck object.
@@ -79,9 +92,13 @@ class SpellCheckClient : public blink::WebSpellCheckClient,
   SpellcheckWordIterator text_iterator_;
   SpellcheckWordIterator contraction_iterator_;
 
-  bool auto_spell_correct_turned_on_;
+  // The parameters of a pending background-spellchecking request.
+  // (When WebKit sends two or more requests, we cancel the previous
+  // requests so we do not have to use vectors.)
+  std::unique_ptr<SpellcheckRequest> pending_request_param_;
 
   v8::Isolate* isolate_;
+  v8::Persistent<v8::Context> context_;
   mate::ScopedPersistent<v8::Object> provider_;
   mate::ScopedPersistent<v8::Function> spell_check_;
 

@@ -29,12 +29,20 @@ app.commandLine.appendSwitch('js-flags', '--expose_gc')
 app.commandLine.appendSwitch('ignore-certificate-errors')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 
+// Disable security warnings (the security warnings test will enable them)
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = true
+
 // Accessing stdout in the main process will result in the process.stdout
 // throwing UnknownSystemError in renderer process sometimes. This line makes
 // sure we can reproduce it in renderer process.
+// eslint-disable-next-line
 process.stdout
 
+// Adding a variable for sandbox process.env test validation
+process.env.sandboxmain = ''
+
 // Access console to reproduce #3482.
+// eslint-disable-next-line
 console
 
 ipcMain.on('message', function (event, ...args) {
@@ -217,6 +225,10 @@ app.on('ready', function () {
       window.webContents.send('executeJavaScript-promise-response', result)
     }).catch((error) => {
       window.webContents.send('executeJavaScript-promise-error', error)
+
+      if (error && error.name) {
+        window.webContents.send('executeJavaScript-promise-error-name', error.name)
+      }
     })
 
     if (!hasCallback) {
@@ -374,6 +386,8 @@ const suspendListeners = (emitter, eventName, callback) => {
     listeners.forEach((listener) => {
       emitter.on(eventName, listener)
     })
+
+    // eslint-disable-next-line standard/no-callback-literal
     callback(...args)
   })
 }

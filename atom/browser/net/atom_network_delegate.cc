@@ -6,15 +6,17 @@
 
 #include <utility>
 
+#include "atom/browser/api/atom_api_web_contents.h"
 #include "atom/common/native_mate_converters/net_converter.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
-#include "brightray/browser/net/devtools_network_transaction.h"
+#include "content/common/devtools/devtools_network_transaction.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_frame_host.h"
 #include "net/url_request/url_request.h"
 
-using brightray::DevToolsNetworkTransaction;
 using content::BrowserThread;
+using content::DevToolsNetworkTransaction;
 
 namespace atom {
 
@@ -39,20 +41,38 @@ const char* ResourceTypeToString(content::ResourceType type) {
   }
 }
 
+int32_t GetWebContentsID(int process_id, int frame_id) {
+  auto* webContents = content::WebContents::FromRenderFrameHost(
+      content::RenderFrameHost::FromID(process_id, frame_id));
+  return atom::api::WebContents::GetIDFromWrappedClass(webContents);
+}
+
 namespace {
 
 using ResponseHeadersContainer =
     std::pair<scoped_refptr<net::HttpResponseHeaders>*, const std::string&>;
 
 void RunSimpleListener(const AtomNetworkDelegate::SimpleListener& listener,
-                       std::unique_ptr<base::DictionaryValue> details) {
+                       std::unique_ptr<base::DictionaryValue> details,
+                       int render_process_id,
+                       int render_frame_id) {
+  int32_t id = GetWebContentsID(render_process_id, render_frame_id);
+  // id must be greater than zero
+  if (id)
+    details->SetInteger("webContentsId", id);
   return listener.Run(*(details.get()));
 }
 
 void RunResponseListener(
     const AtomNetworkDelegate::ResponseListener& listener,
     std::unique_ptr<base::DictionaryValue> details,
+    int render_process_id,
+    int render_frame_id,
     const AtomNetworkDelegate::ResponseCallback& callback) {
+  int32_t id = GetWebContentsID(render_process_id, render_frame_id);
+  // id must be greater than zero
+  if (id)
+    details->SetInteger("webContentsId", id);
   return listener.Run(*(details.get()), callback);
 }
 
@@ -74,10 +94,13 @@ void ToDictionary(base::DictionaryValue* details, net::URLRequest* request) {
   FillRequestDetails(details, request);
   details->SetInteger("id", request->identifier());
   details->SetDouble("timestamp", base::Time::Now().ToDoubleT() * 1000);
-  auto info = content::ResourceRequestInfo::ForRequest(request);
-  details->SetString("resourceType",
-                     info ? ResourceTypeToString(info->GetResourceType())
-                          : "other");
+  const auto* info = content::ResourceRequestInfo::ForRequest(request);
+  if (info) {
+    details->SetString("resourceType",
+                       ResourceTypeToString(info->GetResourceType()));
+  } else {
+    details->SetString("resourceType", "other");
+  }
 }
 
 void ToDictionary(base::DictionaryValue* details,
@@ -85,7 +108,7 @@ void ToDictionary(base::DictionaryValue* details,
   std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
   net::HttpRequestHeaders::Iterator it(headers);
   while (it.GetNext())
-    dict->SetStringWithoutPathExpansion(it.name(), it.value());
+    dict->SetKey(it.name(), base::Value(it.value()));
   details->Set("requestHeaders", std::move(dict));
 }
 
@@ -134,12 +157,12 @@ void ToDictionary(base::DictionaryValue* details,
 }
 
 // Helper function to fill |details| with arbitrary |args|.
-template<typename Arg>
+template <typename Arg>
 void FillDetailsObject(base::DictionaryValue* details, Arg arg) {
   ToDictionary(details, arg);
 }
 
-template<typename Arg, typename... Args>
+template <typename Arg, typename... Args>
 void FillDetailsObject(base::DictionaryValue* details, Arg arg, Args... args) {
   ToDictionary(details, arg);
   FillDetailsObject(details, args...);
@@ -158,8 +181,7 @@ void ReadFromResponseObject(const base::DictionaryValue& response,
   const base::DictionaryValue* dict;
   if (response.GetDictionary("requestHeaders", &dict)) {
     headers->Clear();
-    for (base::DictionaryValue::Iterator it(*dict);
-         !it.IsAtEnd();
+    for (base::DictionaryValue::Iterator it(*dict); !it.IsAtEnd();
          it.Advance()) {
       std::string value;
       if (it.value().GetAsString(&value))
@@ -175,11 +197,10 @@ void ReadFromResponseObject(const base::DictionaryValue& response,
   if (!response.GetString("statusLine", &status_line))
     status_line = container.second;
   if (response.GetDictionary("responseHeaders", &dict)) {
-    auto headers = container.first;
+    auto* headers = container.first;
     *headers = new net::HttpResponseHeaders("");
     (*headers)->ReplaceStatusLine(status_line);
-    for (base::DictionaryValue::Iterator it(*dict);
-         !it.IsAtEnd();
+    for (base::DictionaryValue::Iterator it(*dict); !it.IsAtEnd();
          it.Advance()) {
       const base::ListValue* list;
       if (it.value().GetAsList(&list)) {
@@ -196,35 +217,44 @@ void ReadFromResponseObject(const base::DictionaryValue& response,
 
 }  // namespace
 
-AtomNetworkDelegate::AtomNetworkDelegate() {
-}
+AtomNetworkDelegate::SimpleListenerInfo::SimpleListenerInfo(
+    URLPatterns patterns_,
+    SimpleListener listener_)
+    : url_patterns(patterns_), listener(listener_) {}
+AtomNetworkDelegate::SimpleListenerInfo::SimpleListenerInfo() = default;
+AtomNetworkDelegate::SimpleListenerInfo::~SimpleListenerInfo() = default;
 
-AtomNetworkDelegate::~AtomNetworkDelegate() {
-}
+AtomNetworkDelegate::ResponseListenerInfo::ResponseListenerInfo(
+    URLPatterns patterns_,
+    ResponseListener listener_)
+    : url_patterns(patterns_), listener(listener_) {}
+AtomNetworkDelegate::ResponseListenerInfo::ResponseListenerInfo() = default;
+AtomNetworkDelegate::ResponseListenerInfo::~ResponseListenerInfo() = default;
 
-void AtomNetworkDelegate::SetSimpleListenerInIO(
-    SimpleEvent type,
-    const URLPatterns& patterns,
-    const SimpleListener& callback) {
+AtomNetworkDelegate::AtomNetworkDelegate() {}
+
+AtomNetworkDelegate::~AtomNetworkDelegate() {}
+
+void AtomNetworkDelegate::SetSimpleListenerInIO(SimpleEvent type,
+                                                URLPatterns patterns,
+                                                SimpleListener callback) {
   if (callback.is_null())
     simple_listeners_.erase(type);
   else
-    simple_listeners_[type] = { patterns, callback };
+    simple_listeners_[type] = {std::move(patterns), std::move(callback)};
 }
 
-void AtomNetworkDelegate::SetResponseListenerInIO(
-    ResponseEvent type,
-    const URLPatterns& patterns,
-    const ResponseListener& callback) {
+void AtomNetworkDelegate::SetResponseListenerInIO(ResponseEvent type,
+                                                  URLPatterns patterns,
+                                                  ResponseListener callback) {
   if (callback.is_null())
     response_listeners_.erase(type);
   else
-    response_listeners_[type] = { patterns, callback };
+    response_listeners_[type] = {std::move(patterns), std::move(callback)};
 }
 
 void AtomNetworkDelegate::SetDevToolsNetworkEmulationClientId(
     const std::string& client_id) {
-  base::AutoLock auto_lock(lock_);
   client_id_ = client_id;
 }
 
@@ -233,8 +263,8 @@ int AtomNetworkDelegate::OnBeforeURLRequest(
     const net::CompletionCallback& callback,
     GURL* new_url) {
   if (!base::ContainsKey(response_listeners_, kOnBeforeRequest))
-    return brightray::NetworkDelegate::OnBeforeURLRequest(
-        request, callback, new_url);
+    return brightray::NetworkDelegate::OnBeforeURLRequest(request, callback,
+                                                          new_url);
 
   return HandleResponseEvent(kOnBeforeRequest, request, callback, new_url);
 }
@@ -243,22 +273,16 @@ int AtomNetworkDelegate::OnBeforeStartTransaction(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     net::HttpRequestHeaders* headers) {
-  std::string client_id;
-  {
-    base::AutoLock auto_lock(lock_);
-    client_id = client_id_;
-  }
-
-  if (!client_id.empty())
-    headers->SetHeader(
-        DevToolsNetworkTransaction::kDevToolsEmulateNetworkConditionsClientId,
-        client_id);
+  if (!client_id_.empty())
+    headers->SetHeader(content::DevToolsNetworkTransaction::
+                           kDevToolsEmulateNetworkConditionsClientId,
+                       client_id_);
   if (!base::ContainsKey(response_listeners_, kOnBeforeSendHeaders))
     return brightray::NetworkDelegate::OnBeforeStartTransaction(
         request, callback, headers);
 
-  return HandleResponseEvent(
-      kOnBeforeSendHeaders, request, callback, headers, *headers);
+  return HandleResponseEvent(kOnBeforeSendHeaders, request, callback, headers,
+                             *headers);
 }
 
 void AtomNetworkDelegate::OnStartTransaction(
@@ -342,8 +366,8 @@ void AtomNetworkDelegate::OnURLRequestDestroyed(net::URLRequest* request) {
   callbacks_.erase(request->identifier());
 }
 
-void AtomNetworkDelegate::OnErrorOccurred(
-    net::URLRequest* request, bool started) {
+void AtomNetworkDelegate::OnErrorOccurred(net::URLRequest* request,
+                                          bool started) {
   if (!base::ContainsKey(simple_listeners_, kOnErrorOccurred)) {
     brightray::NetworkDelegate::OnCompleted(request, started);
     return;
@@ -353,7 +377,7 @@ void AtomNetworkDelegate::OnErrorOccurred(
                     request->status());
 }
 
-template<typename Out, typename... Args>
+template <typename Out, typename... Args>
 int AtomNetworkDelegate::HandleResponseEvent(
     ResponseEvent type,
     net::URLRequest* request,
@@ -367,6 +391,10 @@ int AtomNetworkDelegate::HandleResponseEvent(
   std::unique_ptr<base::DictionaryValue> details(new base::DictionaryValue);
   FillDetailsObject(details.get(), request, args...);
 
+  int render_process_id, render_frame_id;
+  content::ResourceRequestInfo::GetRenderFrameForRequest(
+      request, &render_process_id, &render_frame_id);
+
   // The |request| could be destroyed before the |callback| is called.
   callbacks_[request->identifier()] = callback;
 
@@ -375,14 +403,15 @@ int AtomNetworkDelegate::HandleResponseEvent(
                  base::Unretained(this), request->identifier(), out);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(RunResponseListener, info.listener, base::Passed(&details),
-                 response));
+      base::BindOnce(RunResponseListener, info.listener, std::move(details),
+                     render_process_id, render_frame_id, response));
   return net::ERR_IO_PENDING;
 }
 
-template<typename...Args>
-void AtomNetworkDelegate::HandleSimpleEvent(
-    SimpleEvent type, net::URLRequest* request, Args... args) {
+template <typename... Args>
+void AtomNetworkDelegate::HandleSimpleEvent(SimpleEvent type,
+                                            net::URLRequest* request,
+                                            Args... args) {
   const auto& info = simple_listeners_[type];
   if (!MatchesFilterCondition(request, info.url_patterns))
     return;
@@ -390,14 +419,21 @@ void AtomNetworkDelegate::HandleSimpleEvent(
   std::unique_ptr<base::DictionaryValue> details(new base::DictionaryValue);
   FillDetailsObject(details.get(), request, args...);
 
+  int render_process_id, render_frame_id;
+  content::ResourceRequestInfo::GetRenderFrameForRequest(
+      request, &render_process_id, &render_frame_id);
+
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(RunSimpleListener, info.listener, base::Passed(&details)));
+      base::BindOnce(RunSimpleListener, info.listener, std::move(details),
+                     render_process_id, render_frame_id));
 }
 
-template<typename T>
+template <typename T>
 void AtomNetworkDelegate::OnListenerResultInIO(
-    uint64_t id, T out, std::unique_ptr<base::DictionaryValue> response) {
+    uint64_t id,
+    T out,
+    std::unique_ptr<base::DictionaryValue> response) {
   // The request has been destroyed.
   if (!base::ContainsKey(callbacks_, id))
     return;
@@ -409,14 +445,16 @@ void AtomNetworkDelegate::OnListenerResultInIO(
   callbacks_[id].Run(cancel ? net::ERR_BLOCKED_BY_CLIENT : net::OK);
 }
 
-template<typename T>
+template <typename T>
 void AtomNetworkDelegate::OnListenerResultInUI(
-    uint64_t id, T out, const base::DictionaryValue& response) {
+    uint64_t id,
+    T out,
+    const base::DictionaryValue& response) {
   std::unique_ptr<base::DictionaryValue> copy = response.CreateDeepCopy();
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&AtomNetworkDelegate::OnListenerResultInIO<T>,
-                 base::Unretained(this),  id, out, base::Passed(&copy)));
+      base::BindOnce(&AtomNetworkDelegate::OnListenerResultInIO<T>,
+                     base::Unretained(this), id, out, std::move(copy)));
 }
 
 }  // namespace atom

@@ -11,9 +11,10 @@ import stat
 if sys.platform == "win32":
   import _winreg
 
-from lib.config import BASE_URL, PLATFORM, get_target_arch, get_zip_name
+from lib.config import BASE_URL, PLATFORM, enable_verbose_mode, \
+                       get_target_arch, get_zip_name, build_env
 from lib.util import scoped_cwd, rm_rf, get_electron_version, make_zip, \
-                     execute, electron_gyp
+                     execute, electron_gyp, electron_features
 
 
 ELECTRON_VERSION = get_electron_version()
@@ -23,9 +24,11 @@ DIST_DIR = os.path.join(SOURCE_ROOT, 'dist')
 OUT_DIR = os.path.join(SOURCE_ROOT, 'out', 'R')
 CHROMIUM_DIR = os.path.join(SOURCE_ROOT, 'vendor', 'download',
                             'libchromiumcontent', 'static_library')
+NATIVE_MKSNAPSHOT_DIR = os.path.join(SOURCE_ROOT, 'vendor', 'native_mksnapshot')
 
 PROJECT_NAME = electron_gyp()['project_name%']
 PRODUCT_NAME = electron_gyp()['product_name%']
+PDF_VIEWER_ENABLED = electron_features()['enable_pdf_viewer%']
 
 TARGET_BINARIES = {
   'darwin': [
@@ -33,7 +36,6 @@ TARGET_BINARIES = {
   'win32': [
     '{0}.exe'.format(PROJECT_NAME),  # 'electron.exe'
     'content_shell.pak',
-    'pdf_viewer_resources.pak',
     'd3dcompiler_47.dll',
     'icudtl.dat',
     'libEGL.dll',
@@ -50,7 +52,6 @@ TARGET_BINARIES = {
   'linux': [
     PROJECT_NAME,  # 'electron'
     'content_shell.pak',
-    'pdf_viewer_resources.pak',
     'icudtl.dat',
     'libffmpeg.so',
     'libnode.so',
@@ -79,6 +80,14 @@ TARGET_DIRECTORIES = {
 
 
 def main():
+  args = parse_args()
+
+  if args.chromium_dir:
+    globals().update(CHROMIUM_DIR=args.chromium_dir)
+
+  if args.verbose:
+    enable_verbose_mode()
+
   rm_rf(DIST_DIR)
   os.makedirs(DIST_DIR)
 
@@ -91,8 +100,6 @@ def main():
   if PLATFORM == 'win32':
     copy_vcruntime_binaries()
     copy_ucrt_binaries()
-
-  args = parse_args()
 
   if PLATFORM != 'win32' and not args.no_api_docs:
     create_api_json_schema()
@@ -118,6 +125,10 @@ def copy_binaries():
   for binary in TARGET_BINARIES[PLATFORM]:
     shutil.copy2(os.path.join(OUT_DIR, binary), DIST_DIR)
 
+  if PLATFORM != 'darwin' and PDF_VIEWER_ENABLED:
+    shutil.copy2(os.path.join(OUT_DIR, 'pdf_viewer_resources.pak'),
+                 DIST_DIR)
+
   for directory in TARGET_DIRECTORIES[PLATFORM]:
     shutil.copytree(os.path.join(OUT_DIR, directory),
                     os.path.join(DIST_DIR, directory),
@@ -133,7 +144,6 @@ def copy_chrome_binary(binary):
   # Copy file and keep the executable bit.
   shutil.copyfile(src, dest)
   os.chmod(dest, os.stat(dest).st_mode | stat.S_IEXEC)
-
 
 def copy_vcruntime_binaries():
   with _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,
@@ -206,11 +216,15 @@ def strip_binaries():
 
 
 def strip_binary(binary_path):
-    if get_target_arch() == 'arm':
-      strip = 'arm-linux-gnueabihf-strip'
-    else:
-      strip = 'strip'
-    execute([strip, binary_path])
+  if get_target_arch() == 'arm':
+    strip = 'arm-linux-gnueabihf-strip'
+  elif get_target_arch() == 'arm64':
+    strip = 'aarch64-linux-gnu-strip'
+  elif get_target_arch() == 'mips64el':
+    strip = 'mips64el-redhat-linux-strip'
+  else:
+    strip = 'strip'
+  execute([strip, binary_path], env=build_env())
 
 
 def create_version():
@@ -220,6 +234,9 @@ def create_version():
 
 
 def create_symbols():
+  if get_target_arch() == 'mips64el':
+    return
+
   destination = os.path.join(DIST_DIR, '{0}.breakpad.syms'.format(PROJECT_NAME))
   dump_symbols = os.path.join(SOURCE_ROOT, 'script', 'dump-symbols.py')
   execute([sys.executable, dump_symbols, destination])
@@ -241,22 +258,46 @@ def create_dist_zip():
   with scoped_cwd(DIST_DIR):
     files = TARGET_BINARIES[PLATFORM] + TARGET_BINARIES_EXT + ['LICENSE',
             'LICENSES.chromium.html', 'version']
+    if PLATFORM != 'darwin' and PDF_VIEWER_ENABLED:
+      files += ['pdf_viewer_resources.pak']
     dirs = TARGET_DIRECTORIES[PLATFORM]
     make_zip(zip_file, files, dirs)
 
 
 def create_chrome_binary_zip(binary, version):
-  dist_name = get_zip_name(binary, version)
+  file_suffix = ''
+  create_native_mksnapshot = False
+  if binary == 'mksnapshot':
+    arch = get_target_arch()
+    if arch.startswith('arm'):
+      # if the arch is arm/arm64 the mksnapshot executable is an x64 binary,
+      # so name it as such.
+      file_suffix = 'x64'
+      create_native_mksnapshot = True
+  dist_name = get_zip_name(binary, version, file_suffix)
   zip_file = os.path.join(SOURCE_ROOT, 'dist', dist_name)
 
+  files = ['LICENSE', 'LICENSES.chromium.html']
+  if PLATFORM == 'win32':
+    files += [binary + '.exe']
+  else:
+    files += [binary]
+
   with scoped_cwd(DIST_DIR):
-    files = ['LICENSE', 'LICENSES.chromium.html']
-    if PLATFORM == 'win32':
-      files += [binary + '.exe']
-    else:
-      files += [binary]
     make_zip(zip_file, files, [])
 
+  if create_native_mksnapshot == True:
+    # Create a zip with the native version of the mksnapshot binary.
+    src = os.path.join(NATIVE_MKSNAPSHOT_DIR, binary)
+    dest = os.path.join(DIST_DIR, binary)
+    # Copy file and keep the executable bit.
+    shutil.copyfile(src, dest)
+    os.chmod(dest, os.stat(dest).st_mode | stat.S_IEXEC)
+
+    dist_name = get_zip_name(binary, version)
+    zip_file = os.path.join(SOURCE_ROOT, 'dist', dist_name)
+    with scoped_cwd(DIST_DIR):
+      make_zip(zip_file, files, [])
 
 def create_ffmpeg_zip():
   dist_name = get_zip_name('ffmpeg', ELECTRON_VERSION)
@@ -280,6 +321,9 @@ def create_ffmpeg_zip():
 
 
 def create_symbols_zip():
+  if get_target_arch() == 'mips64el':
+    return
+
   dist_name = get_zip_name(PROJECT_NAME, ELECTRON_VERSION, 'symbols')
   zip_file = os.path.join(DIST_DIR, dist_name)
   licenses = ['LICENSE', 'LICENSES.chromium.html', 'version']
@@ -305,6 +349,12 @@ def parse_args():
   parser.add_argument('--no_api_docs',
                       action='store_true',
                       help='Skip generating the Electron API Documentation!')
+  parser.add_argument('--chromium_dir',
+                     help='Specify a custom libchromiumcontent dist directory '
+                        + 'if manually compiled')
+  parser.add_argument('-v', '--verbose',
+                      action='store_true',
+                      help='Prints the output of the subprocesses')
   return parser.parse_args()
 
 

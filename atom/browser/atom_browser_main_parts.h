@@ -15,6 +15,12 @@
 
 class BrowserProcess;
 
+#if defined(TOOLKIT_VIEWS)
+namespace brightray {
+class ViewsDelegate;
+}
+#endif
+
 namespace atom {
 
 class AtomBindings;
@@ -25,10 +31,14 @@ class NodeDebugger;
 class NodeEnvironment;
 class BridgeTaskRunner;
 
+#if defined(OS_MACOSX)
+class ViewsDelegateMac;
+#endif
+
 class AtomBrowserMainParts : public brightray::BrowserMainParts {
  public:
   AtomBrowserMainParts();
-  virtual ~AtomBrowserMainParts();
+  ~AtomBrowserMainParts() override;
 
   static AtomBrowserMainParts* Get();
 
@@ -41,7 +51,7 @@ class AtomBrowserMainParts : public brightray::BrowserMainParts {
   // Register a callback that should be destroyed before JavaScript environment
   // gets destroyed.
   // Returns a closure that can be used to remove |callback| from the list.
-  base::Closure RegisterDestructionCallback(const base::Closure& callback);
+  void RegisterDestructionCallback(base::OnceClosure callback);
 
   Browser* browser() { return browser_.get(); }
 
@@ -49,6 +59,8 @@ class AtomBrowserMainParts : public brightray::BrowserMainParts {
   // content::BrowserMainParts:
   void PreEarlyInitialization() override;
   void PostEarlyInitialization() override;
+  int PreCreateThreads() override;
+  void ToolkitInitialized() override;
   void PreMainMessageLoopRun() override;
   bool MainMessageLoopRun(int* result_code) override;
   void PostMainMessageLoopStart() override;
@@ -66,6 +78,12 @@ class AtomBrowserMainParts : public brightray::BrowserMainParts {
 
 #if defined(OS_MACOSX)
   void FreeAppDelegate();
+#endif
+
+#if defined(OS_MACOSX)
+  std::unique_ptr<ViewsDelegateMac> views_delegate_;
+#else
+  std::unique_ptr<brightray::ViewsDelegate> views_delegate_;
 #endif
 
   // A fake BrowserProcess object that used to feed the source code from chrome.
@@ -88,7 +106,7 @@ class AtomBrowserMainParts : public brightray::BrowserMainParts {
   base::Timer gc_timer_;
 
   // List of callbacks should be executed before destroying JS env.
-  std::list<base::Closure> destructors_;
+  std::list<base::OnceClosure> destructors_;
 
   static AtomBrowserMainParts* self_;
 

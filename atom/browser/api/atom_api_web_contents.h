@@ -13,8 +13,10 @@
 #include "atom/browser/api/trackable_object.h"
 #include "atom/browser/common_web_contents_delegate.h"
 #include "atom/browser/ui/autofill_popup.h"
+#include "base/observer_list.h"
 #include "content/common/cursors/webcursor.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/favicon_url.h"
 #include "native_mate/handle.h"
@@ -30,13 +32,13 @@ class InspectableWebContents;
 }
 
 namespace content {
-class ResourceRequestBodyImpl;
+class ResourceRequestBody;
 }
 
 namespace mate {
 class Arguments;
 class Dictionary;
-}
+}  // namespace mate
 
 namespace atom {
 
@@ -46,8 +48,21 @@ class AtomJavaScriptDialogManager;
 class WebContentsZoomController;
 class WebViewGuestDelegate;
 
+#if defined(ENABLE_OSR)
+class OffScreenWebContentsView;
+#endif
+
 namespace api {
 
+// Certain events are only in WebContentsDelegate, provide our own Observer to
+// dispatch those events.
+class ExtendedWebContentsObserver {
+ public:
+  virtual void OnCloseContents() {}
+  virtual void OnRendererResponsive() {}
+};
+
+// Wrapper around the content::WebContents.
 class WebContents : public mate::TrackableObject<WebContents>,
                     public CommonWebContentsDelegate,
                     public content::WebContentsObserver {
@@ -67,16 +82,21 @@ class WebContents : public mate::TrackableObject<WebContents>,
 
   // Create from an existing WebContents.
   static mate::Handle<WebContents> CreateFrom(
-      v8::Isolate* isolate, content::WebContents* web_contents);
+      v8::Isolate* isolate,
+      content::WebContents* web_contents);
   static mate::Handle<WebContents> CreateFrom(
-      v8::Isolate* isolate, content::WebContents* web_contents, Type type);
+      v8::Isolate* isolate,
+      content::WebContents* web_contents,
+      Type type);
 
   // Create a new WebContents.
-  static mate::Handle<WebContents> Create(
-      v8::Isolate* isolate, const mate::Dictionary& options);
+  static mate::Handle<WebContents> Create(v8::Isolate* isolate,
+                                          const mate::Dictionary& options);
 
   static void BuildPrototype(v8::Isolate* isolate,
                              v8::Local<v8::FunctionTemplate> prototype);
+
+  static int64_t GetIDForContents(content::WebContents* web_contents);
 
   // Notifies to destroy any guest web contents before destroying self.
   void DestroyWebContents(bool async);
@@ -116,8 +136,7 @@ class WebContents : public mate::TrackableObject<WebContents>,
   void DisableDeviceEmulation();
   void InspectElement(int x, int y);
   void InspectServiceWorker();
-  void HasServiceWorker(
-      const base::Callback<void(bool)>&);
+  void HasServiceWorker(const base::Callback<void(bool)>&);
   void UnregisterServiceWorker(const base::Callback<void(bool)>&);
   void SetIgnoreMenuShortcuts(bool ignore);
   void SetAudioMuted(bool muted);
@@ -125,6 +144,8 @@ class WebContents : public mate::TrackableObject<WebContents>,
   void Print(mate::Arguments* args);
   std::vector<printing::PrinterBasicInfo> GetPrinterList();
   void SetEmbedder(const WebContents* embedder);
+  void SetDevToolsWebContents(const WebContents* devtools);
+  v8::Local<v8::Value> GetNativeView() const;
 
   // Print current page as PDF.
   void PrintToPDF(const base::DictionaryValue& setting,
@@ -181,7 +202,6 @@ class WebContents : public mate::TrackableObject<WebContents>,
 
   // Methods for offscreen rendering
   bool IsOffScreen() const;
-  bool IsOffScreenOrEmbedderOffscreen() const;
   void OnPaint(const gfx::Rect& dirty_rect, const SkBitmap& bitmap);
   void StartPainting();
   void StopPainting();
@@ -203,15 +223,16 @@ class WebContents : public mate::TrackableObject<WebContents>,
                                    bool allowed);
 
   // Create window with the given disposition.
-  void OnCreateWindow(
-      const GURL& target_url,
-      const std::string& frame_name,
-      WindowOpenDisposition disposition,
-      const std::vector<std::string>& features,
-      const scoped_refptr<content::ResourceRequestBodyImpl>& body);
+  void OnCreateWindow(const GURL& target_url,
+                      const content::Referrer& referrer,
+                      const std::string& frame_name,
+                      WindowOpenDisposition disposition,
+                      const std::vector<std::string>& features,
+                      const scoped_refptr<content::ResourceRequestBody>& body);
 
   // Returns the web preferences of current WebContents.
   v8::Local<v8::Value> GetWebPreferences(v8::Isolate* isolate);
+  v8::Local<v8::Value> GetLastWebPreferences(v8::Isolate* isolate);
 
   // Returns the owner window.
   v8::Local<v8::Value> GetOwnerBrowserWindow();
@@ -229,15 +250,22 @@ class WebContents : public mate::TrackableObject<WebContents>,
 
   WebContentsZoomController* GetZoomController() { return zoom_controller_; }
 
+  void AddObserver(ExtendedWebContentsObserver* obs) {
+    observers_.AddObserver(obs);
+  }
+  void RemoveObserver(ExtendedWebContentsObserver* obs) {
+    observers_.RemoveObserver(obs);
+  }
+
  protected:
   WebContents(v8::Isolate* isolate,
               content::WebContents* web_contents,
               Type type);
   WebContents(v8::Isolate* isolate, const mate::Dictionary& options);
-  ~WebContents();
+  ~WebContents() override;
 
   void InitWithSessionAndOptions(v8::Isolate* isolate,
-                                 content::WebContents *web_contents,
+                                 content::WebContents* web_contents,
                                  mate::Handle<class Session> session,
                                  const mate::Dictionary& options);
 
@@ -292,18 +320,16 @@ class WebContents : public mate::TrackableObject<WebContents>,
                  const gfx::Rect& selection_rect,
                  int active_match_ordinal,
                  bool final_update) override;
-  bool CheckMediaAccessPermission(
-      content::WebContents* web_contents,
-      const GURL& security_origin,
-      content::MediaStreamType type) override;
+  bool CheckMediaAccessPermission(content::WebContents* web_contents,
+                                  const GURL& security_origin,
+                                  content::MediaStreamType type) override;
   void RequestMediaAccessPermission(
       content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback) override;
-  void RequestToLockMouse(
-      content::WebContents* web_contents,
-      bool user_gesture,
-      bool last_unlocked_by_target) override;
+  void RequestToLockMouse(content::WebContents* web_contents,
+                          bool user_gesture,
+                          bool last_unlocked_by_target) override;
   std::unique_ptr<content::BluetoothChooser> RunBluetoothChooser(
       content::RenderFrameHost* frame,
       const content::BluetoothChooser::EventHandler& handler) override;
@@ -322,14 +348,15 @@ class WebContents : public mate::TrackableObject<WebContents>,
   void DidFailLoad(content::RenderFrameHost* render_frame_host,
                    const GURL& validated_url,
                    int error_code,
-                   const base::string16& error_description,
-                   bool was_ignored_by_handler) override;
+                   const base::string16& error_description) override;
   void DidStartLoading() override;
   void DidStopLoading() override;
   void DidGetResourceResponseStart(
       const content::ResourceRequestDetails& details) override;
   void DidGetRedirectForResourceRequest(
       const content::ResourceRedirectDetails& details) override;
+  void DidStartNavigation(
+      content::NavigationHandle* navigation_handle) override;
   void DidFinishNavigation(
       content::NavigationHandle* navigation_handle) override;
   bool OnMessageReceived(const IPC::Message& message) override;
@@ -338,7 +365,7 @@ class WebContents : public mate::TrackableObject<WebContents>,
   void WebContentsDestroyed() override;
   void NavigationEntryCommitted(
       const content::LoadCommittedDetails& load_details) override;
-  void TitleWasSet(content::NavigationEntry* entry, bool explicit_set) override;
+  void TitleWasSet(content::NavigationEntry* entry) override;
   void DidUpdateFaviconURL(
       const std::vector<content::FaviconURL>& urls) override;
   void PluginCrashed(const base::FilePath& plugin_path,
@@ -357,32 +384,50 @@ class WebContents : public mate::TrackableObject<WebContents>,
   void DevToolsOpened() override;
   void DevToolsClosed() override;
 
+#if defined(TOOLKIT_VIEWS)
+  void ShowAutofillPopup(content::RenderFrameHost* frame_host,
+                         const gfx::RectF& bounds,
+                         const std::vector<base::string16>& values,
+                         const std::vector<base::string16>& labels);
+#endif
+
  private:
+  struct FrameDispatchHelper;
   AtomBrowserContext* GetBrowserContext() const;
 
-  uint32_t GetNextRequestId() {
-    return ++request_id_;
-  }
+  uint32_t GetNextRequestId() { return ++request_id_; }
+
+#if defined(ENABLE_OSR)
+  OffScreenWebContentsView* GetOffScreenWebContentsView() const;
+#endif
 
   // Called when we receive a CursorChange message from chromium.
   void OnCursorChange(const content::WebCursor& cursor);
 
   // Called when received a message from renderer.
-  void OnRendererMessage(const base::string16& channel,
+  void OnRendererMessage(content::RenderFrameHost* frame_host,
+                         const base::string16& channel,
                          const base::ListValue& args);
 
   // Called when received a synchronous message from renderer.
-  void OnRendererMessageSync(const base::string16& channel,
+  void OnRendererMessageSync(content::RenderFrameHost* frame_host,
+                             const base::string16& channel,
                              const base::ListValue& args,
                              IPC::Message* message);
 
   // Called when received a synchronous message from renderer to
   // set temporary zoom level.
-  void OnSetTemporaryZoomLevel(double level, IPC::Message* reply_msg);
+  void OnSetTemporaryZoomLevel(content::RenderFrameHost* frame_host,
+                               double level,
+                               IPC::Message* reply_msg);
 
   // Called when received a synchronous message from renderer to
   // get the zoom level.
-  void OnGetZoomLevel(IPC::Message* reply_msg);
+  void OnGetZoomLevel(content::RenderFrameHost* frame_host,
+                      IPC::Message* reply_msg);
+
+  void InitZoomController(content::WebContents* web_contents,
+                          const mate::Dictionary& options);
 
   v8::Global<v8::Value> session_;
   v8::Global<v8::Value> devtools_web_contents_;
@@ -408,6 +453,9 @@ class WebContents : public mate::TrackableObject<WebContents>,
 
   // Whether to enable devtools.
   bool enable_devtools_;
+
+  // Observers of this WebContents.
+  base::ObserverList<ExtendedWebContentsObserver> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContents);
 };

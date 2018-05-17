@@ -10,15 +10,16 @@
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/threading/sequenced_worker_pool.h"
-#include "base/threading/worker_pool.h"
-#include "brightray/browser/net/devtools_network_controller_handle.h"
-#include "brightray/browser/net/devtools_network_transaction_factory.h"
+#include "base/task_scheduler/post_task.h"
+#include "brightray/browser/browser_client.h"
+#include "brightray/browser/net/require_ct_delegate.h"
 #include "brightray/browser/net_log.h"
 #include "brightray/browser/network_delegate.h"
 #include "brightray/common/switches.h"
+#include "components/network_session_configurator/common/network_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
+#include "content/public/browser/devtools_network_transaction_factory.h"
 #include "content/public/common/content_switches.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/cert/cert_verifier.h"
@@ -38,7 +39,6 @@
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_script_fetcher_impl.h"
 #include "net/proxy/proxy_service.h"
-#include "net/proxy/proxy_service_v8.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/default_channel_id_store.h"
 #include "net/ssl/ssl_config_service_defaults.h"
@@ -51,12 +51,7 @@
 #include "net/url_request/url_request_intercepting_job_factory.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "storage/browser/quota/special_storage_policy.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "url/url_constants.h"
-
-#if defined(USE_NSS_CERTS)
-#include "net/cert_net/nss_ocsp.h"
-#endif
 
 using content::BrowserThread;
 
@@ -66,6 +61,11 @@ std::string URLRequestContextGetter::Delegate::GetUserAgent() {
   return base::EmptyString();
 }
 
+std::unique_ptr<net::NetworkDelegate>
+URLRequestContextGetter::Delegate::CreateNetworkDelegate() {
+  return nullptr;
+}
+
 std::unique_ptr<net::URLRequestJobFactory>
 URLRequestContextGetter::Delegate::CreateURLRequestJobFactory(
     content::ProtocolHandlerMap* protocol_handlers) {
@@ -73,8 +73,8 @@ URLRequestContextGetter::Delegate::CreateURLRequestJobFactory(
       new net::URLRequestJobFactoryImpl);
 
   for (auto& it : *protocol_handlers) {
-    job_factory->SetProtocolHandler(
-        it.first, base::WrapUnique(it.second.release()));
+    job_factory->SetProtocolHandler(it.first,
+                                    base::WrapUnique(it.second.release()));
   }
   protocol_handlers->clear();
 
@@ -82,9 +82,10 @@ URLRequestContextGetter::Delegate::CreateURLRequestJobFactory(
       url::kDataScheme, base::WrapUnique(new net::DataProtocolHandler));
   job_factory->SetProtocolHandler(
       url::kFileScheme,
-      base::WrapUnique(new net::FileProtocolHandler(
-          BrowserThread::GetBlockingPool()->GetTaskRunnerWithShutdownBehavior(
-              base::SequencedWorkerPool::SKIP_ON_SHUTDOWN))));
+      base::WrapUnique(
+          new net::FileProtocolHandler(base::CreateTaskRunnerWithTraits(
+              {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
+               base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN}))));
 
   return std::move(job_factory);
 }
@@ -92,22 +93,19 @@ URLRequestContextGetter::Delegate::CreateURLRequestJobFactory(
 net::HttpCache::BackendFactory*
 URLRequestContextGetter::Delegate::CreateHttpCacheBackendFactory(
     const base::FilePath& base_path) {
-  auto command_line = base::CommandLine::ForCurrentProcess();
+  auto* command_line = base::CommandLine::ForCurrentProcess();
   int max_size = 0;
   base::StringToInt(command_line->GetSwitchValueASCII(switches::kDiskCacheSize),
                     &max_size);
 
   base::FilePath cache_path = base_path.Append(FILE_PATH_LITERAL("Cache"));
   return new net::HttpCache::DefaultBackend(
-      net::DISK_CACHE,
-      net::CACHE_BACKEND_DEFAULT,
-      cache_path,
-      max_size,
-      BrowserThread::GetTaskRunnerForThread(BrowserThread::CACHE));
+      net::DISK_CACHE, net::CACHE_BACKEND_DEFAULT, cache_path, max_size);
 }
 
 std::unique_ptr<net::CertVerifier>
-URLRequestContextGetter::Delegate::CreateCertVerifier() {
+URLRequestContextGetter::Delegate::CreateCertVerifier(
+    RequireCTDelegate* ct_delegate) {
   return net::CertVerifier::CreateDefault();
 }
 
@@ -118,30 +116,27 @@ URLRequestContextGetter::Delegate::CreateSSLConfigService() {
 
 std::vector<std::string>
 URLRequestContextGetter::Delegate::GetCookieableSchemes() {
-  return { "http", "https", "ws", "wss" };
+  return {"http", "https", "ws", "wss"};
 }
 
 URLRequestContextGetter::URLRequestContextGetter(
     Delegate* delegate,
-    DevToolsNetworkControllerHandle* handle,
     NetLog* net_log,
     const base::FilePath& base_path,
     bool in_memory,
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-    scoped_refptr<base::SingleThreadTaskRunner> file_task_runner,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector protocol_interceptors)
     : delegate_(delegate),
-      network_controller_handle_(handle),
       net_log_(net_log),
       base_path_(base_path),
       in_memory_(in_memory),
       io_task_runner_(io_task_runner),
-      file_task_runner_(file_task_runner),
       protocol_interceptors_(std::move(protocol_interceptors)),
-      job_factory_(nullptr) {
+      job_factory_(nullptr),
+      context_shutting_down_(false) {
   // Must first be created on the UI thread.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (protocol_handlers)
     std::swap(protocol_handlers_, *protocol_handlers);
@@ -152,14 +147,37 @@ URLRequestContextGetter::URLRequestContextGetter(
   // We must create the proxy config service on the UI loop on Linux because it
   // must synchronously run on the glib message loop. This will be passed to
   // the URLRequestContextStorage on the IO thread in GetURLRequestContext().
-  proxy_config_service_ = net::ProxyService::CreateSystemProxyConfigService(
-      io_task_runner_, file_task_runner_);
+  proxy_config_service_ =
+      net::ProxyService::CreateSystemProxyConfigService(io_task_runner_);
 }
 
-URLRequestContextGetter::~URLRequestContextGetter() {
-#if defined(USE_NSS_CERTS)
-  net::SetURLRequestContextForNSSHttpIO(NULL);
-#endif
+URLRequestContextGetter::~URLRequestContextGetter() {}
+
+void URLRequestContextGetter::NotifyContextShutdownOnIO() {
+  context_shutting_down_ = true;
+  cookie_change_sub_.reset();
+  http_network_session_.reset();
+  http_auth_preferences_.reset();
+  host_mapping_rules_.reset();
+  url_request_context_.reset();
+  storage_.reset();
+  ct_delegate_.reset();
+  net::URLRequestContextGetter::NotifyContextShuttingDown();
+}
+
+void URLRequestContextGetter::OnCookieChanged(
+    const net::CanonicalCookie& cookie,
+    net::CookieStore::ChangeCause cause) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+
+  if (!delegate_ || context_shutting_down_)
+    return;
+
+  content::BrowserThread::PostTask(
+      content::BrowserThread::UI, FROM_HERE,
+      base::BindOnce(
+          &Delegate::NotifyCookieChange, base::Unretained(delegate_), cookie,
+          !(cause == net::CookieStore::ChangeCause::INSERTED), cause));
 }
 
 net::HostResolver* URLRequestContextGetter::host_resolver() {
@@ -167,46 +185,53 @@ net::HostResolver* URLRequestContextGetter::host_resolver() {
 }
 
 net::URLRequestContext* URLRequestContextGetter::GetURLRequestContext() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  if (context_shutting_down_)
+    return nullptr;
 
   if (!url_request_context_.get()) {
+    ct_delegate_.reset(new RequireCTDelegate);
     auto& command_line = *base::CommandLine::ForCurrentProcess();
     url_request_context_.reset(new net::URLRequestContext);
 
-#if defined(USE_NSS_CERTS)
-    net::SetURLRequestContextForNSSHttpIO(url_request_context_.get());
-#endif
-
     // --log-net-log
     if (net_log_) {
-      net_log_->StartLogging(url_request_context_.get());
+      net_log_->StartLogging();
       url_request_context_->set_net_log(net_log_);
     }
-
-    network_delegate_.reset(delegate_->CreateNetworkDelegate());
-    url_request_context_->set_network_delegate(network_delegate_.get());
 
     storage_.reset(
         new net::URLRequestContextStorage(url_request_context_.get()));
 
-    auto cookie_path = in_memory_ ?
-        base::FilePath() : base_path_.Append(FILE_PATH_LITERAL("Cookies"));
-    auto cookie_config = content::CookieStoreConfig(
-        cookie_path,
-        content::CookieStoreConfig::EPHEMERAL_SESSION_COOKIES,
-        nullptr,
-        delegate_->CreateCookieDelegate());
-    cookie_config.cookieable_schemes = delegate_->GetCookieableSchemes();
+    storage_->set_network_delegate(delegate_->CreateNetworkDelegate());
+
+    auto cookie_path = in_memory_
+                           ? base::FilePath()
+                           : base_path_.Append(FILE_PATH_LITERAL("Cookies"));
     std::unique_ptr<net::CookieStore> cookie_store =
-        content::CreateCookieStore(cookie_config);
+        content::CreateCookieStore(content::CookieStoreConfig(
+            cookie_path, content::CookieStoreConfig::EPHEMERAL_SESSION_COOKIES,
+            nullptr));
     storage_->set_cookie_store(std::move(cookie_store));
-    storage_->set_channel_id_service(base::MakeUnique<net::ChannelIDService>(
+
+    // Set custom schemes that can accept cookies.
+    net::CookieMonster* cookie_monster =
+        static_cast<net::CookieMonster*>(url_request_context_->cookie_store());
+    cookie_monster->SetCookieableSchemes(delegate_->GetCookieableSchemes());
+    // Cookie store will outlive notifier by order of declaration
+    // in the header.
+    cookie_change_sub_ =
+        url_request_context_->cookie_store()->AddCallbackForAllChanges(
+            base::Bind(&URLRequestContextGetter::OnCookieChanged, this));
+
+    storage_->set_channel_id_service(std::make_unique<net::ChannelIDService>(
         new net::DefaultChannelIDStore(nullptr)));
 
-    std::string accept_lang = l10n_util::GetApplicationLocale("");
-    storage_->set_http_user_agent_settings(base::WrapUnique(
-        new net::StaticHttpUserAgentSettings(
-            net::HttpUtil::GenerateAcceptLanguageHeader(accept_lang),
+    storage_->set_http_user_agent_settings(
+        base::WrapUnique(new net::StaticHttpUserAgentSettings(
+            net::HttpUtil::GenerateAcceptLanguageHeader(
+                BrowserClient::Get()->GetApplicationLocale()),
             user_agent_)));
 
     std::unique_ptr<net::HostResolver> host_resolver(
@@ -222,7 +247,6 @@ net::URLRequestContext* URLRequestContextGetter::GetURLRequestContext() {
     }
 
     // --proxy-server
-    net::DhcpProxyScriptFetcherFactory dhcp_factory;
     if (command_line.HasSwitch(switches::kNoProxyServer)) {
       storage_->set_proxy_service(net::ProxyService::CreateDirect());
     } else if (command_line.HasSwitch(switches::kProxyServer)) {
@@ -236,17 +260,11 @@ net::URLRequestContext* URLRequestContextGetter::GetURLRequestContext() {
       auto proxy_config = net::ProxyConfig::CreateFromCustomPacURL(
           GURL(command_line.GetSwitchValueASCII(switches::kProxyPacUrl)));
       proxy_config.set_pac_mandatory(true);
-      storage_->set_proxy_service(net::ProxyService::CreateFixed(
-          proxy_config));
+      storage_->set_proxy_service(net::ProxyService::CreateFixed(proxy_config));
     } else {
       storage_->set_proxy_service(
-          net::CreateProxyServiceUsingV8ProxyResolver(
-              std::move(proxy_config_service_),
-              new net::ProxyScriptFetcherImpl(url_request_context_.get()),
-              dhcp_factory.Create(url_request_context_.get()),
-              host_resolver.get(),
-              nullptr,
-              url_request_context_->network_delegate()));
+          net::ProxyService::CreateUsingSystemProxyResolver(
+              std::move(proxy_config_service_), net_log_));
     }
 
     std::vector<std::string> schemes;
@@ -255,8 +273,8 @@ net::URLRequestContext* URLRequestContextGetter::GetURLRequestContext() {
     schemes.push_back(std::string("ntlm"));
     schemes.push_back(std::string("negotiate"));
 #if defined(OS_POSIX)
-    http_auth_preferences_.reset(new net::HttpAuthPreferences(schemes,
-                                                              std::string()));
+    http_auth_preferences_.reset(
+        new net::HttpAuthPreferences(schemes, std::string()));
 #else
     http_auth_preferences_.reset(new net::HttpAuthPreferences(schemes));
 #endif
@@ -274,16 +292,15 @@ net::URLRequestContext* URLRequestContextGetter::GetURLRequestContext() {
               switches::kAuthNegotiateDelegateWhitelist));
     }
 
-    auto auth_handler_factory =
-        net::HttpAuthHandlerRegistryFactory::Create(
-            http_auth_preferences_.get(), host_resolver.get());
+    auto auth_handler_factory = net::HttpAuthHandlerRegistryFactory::Create(
+        http_auth_preferences_.get(), host_resolver.get());
 
     std::unique_ptr<net::TransportSecurityState> transport_security_state =
         base::WrapUnique(new net::TransportSecurityState);
-    transport_security_state->SetRequireCTDelegate(
-        delegate_->GetRequireCTDelegate());
+    transport_security_state->SetRequireCTDelegate(ct_delegate_.get());
     storage_->set_transport_security_state(std::move(transport_security_state));
-    storage_->set_cert_verifier(delegate_->CreateCertVerifier());
+    storage_->set_cert_verifier(
+        delegate_->CreateCertVerifier(ct_delegate_.get()));
     storage_->set_ssl_config_service(delegate_->CreateSSLConfigService());
     storage_->set_http_auth_handler_factory(std::move(auth_handler_factory));
     std::unique_ptr<net::HttpServerProperties> server_properties(
@@ -291,14 +308,12 @@ net::URLRequestContext* URLRequestContextGetter::GetURLRequestContext() {
     storage_->set_http_server_properties(std::move(server_properties));
 
     std::unique_ptr<net::MultiLogCTVerifier> ct_verifier =
-        base::MakeUnique<net::MultiLogCTVerifier>();
+        std::make_unique<net::MultiLogCTVerifier>();
     ct_verifier->AddLogs(net::ct::CreateLogVerifiersForKnownLogs());
     storage_->set_cert_transparency_verifier(std::move(ct_verifier));
-    storage_->set_ct_policy_enforcer(base::MakeUnique<net::CTPolicyEnforcer>());
+    storage_->set_ct_policy_enforcer(std::make_unique<net::CTPolicyEnforcer>());
 
     net::HttpNetworkSession::Params network_session_params;
-    net::URLRequestContextBuilder::SetHttpNetworkSessionComponents(
-        url_request_context_.get(), &network_session_params);
     network_session_params.ignore_certificate_errors = false;
 
     // --disable-http2
@@ -314,16 +329,18 @@ net::URLRequestContext* URLRequestContextGetter::GetURLRequestContext() {
       host_mapping_rules_.reset(new net::HostMappingRules);
       host_mapping_rules_->SetRulesFromString(
           command_line.GetSwitchValueASCII(switches::kHostRules));
-      network_session_params.host_mapping_rules = host_mapping_rules_.get();
+      network_session_params.host_mapping_rules = *host_mapping_rules_.get();
     }
 
     // Give |storage_| ownership at the end in case it's |mapped_host_resolver|.
     storage_->set_host_resolver(std::move(host_resolver));
-    network_session_params.host_resolver =
-        url_request_context_->host_resolver();
 
-    http_network_session_.reset(
-        new net::HttpNetworkSession(network_session_params));
+    net::HttpNetworkSession::Context network_session_context;
+    net::URLRequestContextBuilder::SetHttpNetworkSessionComponents(
+        url_request_context_.get(), &network_session_context);
+    http_network_session_.reset(new net::HttpNetworkSession(
+        network_session_params, network_session_context));
+
     std::unique_ptr<net::HttpCache::BackendFactory> backend;
     if (in_memory_) {
       backend = net::HttpCache::DefaultBackend::InMemory(0);
@@ -331,20 +348,10 @@ net::URLRequestContext* URLRequestContextGetter::GetURLRequestContext() {
       backend.reset(delegate_->CreateHttpCacheBackendFactory(base_path_));
     }
 
-    if (network_controller_handle_) {
-      storage_->set_http_transaction_factory(base::WrapUnique(
-          new net::HttpCache(
-              base::WrapUnique(new DevToolsNetworkTransactionFactory(
-                  network_controller_handle_->GetController(),
-                  http_network_session_.get())),
-              std::move(backend),
-              false)));
-    } else {
-      storage_->set_http_transaction_factory(base::WrapUnique(
-          new net::HttpCache(http_network_session_.get(),
-                             std::move(backend),
-                             false)));
-    }
+    storage_->set_http_transaction_factory(std::make_unique<net::HttpCache>(
+        content::CreateDevToolsNetworkTransactionFactory(
+            http_network_session_.get()),
+        std::move(backend), false));
 
     std::unique_ptr<net::URLRequestJobFactory> job_factory =
         delegate_->CreateURLRequestJobFactory(&protocol_handlers_);
@@ -353,14 +360,14 @@ net::URLRequestContext* URLRequestContextGetter::GetURLRequestContext() {
     // Set up interceptors in the reverse order.
     std::unique_ptr<net::URLRequestJobFactory> top_job_factory =
         std::move(job_factory);
-    content::URLRequestInterceptorScopedVector::reverse_iterator it;
-    for (it = protocol_interceptors_.rbegin();
-         it != protocol_interceptors_.rend();
-         ++it) {
-      top_job_factory.reset(new net::URLRequestInterceptingJobFactory(
-          std::move(top_job_factory), std::move(*it)));
+    if (!protocol_interceptors_.empty()) {
+      for (auto it = protocol_interceptors_.rbegin();
+           it != protocol_interceptors_.rend(); ++it) {
+        top_job_factory.reset(new net::URLRequestInterceptingJobFactory(
+            std::move(top_job_factory), std::move(*it)));
+      }
+      protocol_interceptors_.clear();
     }
-    protocol_interceptors_.clear();
 
     storage_->set_job_factory(std::move(top_job_factory));
   }

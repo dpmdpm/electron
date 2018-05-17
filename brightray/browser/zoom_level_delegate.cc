@@ -18,17 +18,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/page_zoom.h"
 
-namespace std {
-
-template <>
-struct hash<base::FilePath> {
-  size_t operator()(const base::FilePath& f) const {
-    return hash<base::FilePath::StringType>()(f.value());
-  }
-};
-
-}  // namespace std
-
 namespace brightray {
 
 namespace {
@@ -98,14 +87,14 @@ void ZoomLevelDelegate::OnZoomLevelChanged(
   base::DictionaryValue* host_zoom_dictionary = nullptr;
   if (!host_zoom_dictionaries->GetDictionary(partition_key_,
                                              &host_zoom_dictionary)) {
-    host_zoom_dictionary = new base::DictionaryValue();
-    host_zoom_dictionaries->Set(partition_key_, host_zoom_dictionary);
+    host_zoom_dictionary = host_zoom_dictionaries->SetDictionary(
+        partition_key_, std::make_unique<base::DictionaryValue>());
   }
 
   if (modification_is_removal)
     host_zoom_dictionary->RemoveWithoutPathExpansion(change.host, nullptr);
   else
-    host_zoom_dictionary->SetDoubleWithoutPathExpansion(change.host, level);
+    host_zoom_dictionary->SetKey(change.host, base::Value(level));
 }
 
 void ZoomLevelDelegate::ExtractPerHostZoomLevels(

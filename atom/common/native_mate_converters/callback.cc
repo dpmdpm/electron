@@ -38,27 +38,11 @@ void CallTranslater(v8::Local<v8::External> external,
   delete holder;
 }
 
-// func.bind(func, arg1).
-// NB(zcbenz): Using C++11 version crashes VS.
-v8::Local<v8::Value> BindFunctionWith(v8::Isolate* isolate,
-                                      v8::Local<v8::Context> context,
-                                      v8::Local<v8::Function> func,
-                                      v8::Local<v8::Value> arg1,
-                                      v8::Local<v8::Value> arg2) {
-  v8::MaybeLocal<v8::Value> bind = func->Get(mate::StringToV8(isolate, "bind"));
-  CHECK(!bind.IsEmpty());
-  v8::Local<v8::Function> bind_func =
-      v8::Local<v8::Function>::Cast(bind.ToLocalChecked());
-  v8::Local<v8::Value> converted[] = { func, arg1, arg2 };
-  return bind_func->Call(
-      context, func, arraysize(converted), converted).ToLocalChecked();
-}
-
 }  // namespace
 
 // Destroy the class on UI thread when possible.
 struct DeleteOnUIThread {
-  template<typename T>
+  template <typename T>
   static void Destruct(const T* x) {
     if (Locker::IsBrowserProcess() &&
         !BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -70,17 +54,14 @@ struct DeleteOnUIThread {
 };
 
 // Like v8::Global, but ref-counted.
-template<typename T>
-class RefCountedGlobal : public base::RefCountedThreadSafe<RefCountedGlobal<T>,
-                                                           DeleteOnUIThread> {
+template <typename T>
+class RefCountedGlobal
+    : public base::RefCountedThreadSafe<RefCountedGlobal<T>, DeleteOnUIThread> {
  public:
   RefCountedGlobal(v8::Isolate* isolate, v8::Local<v8::Value> value)
-      : handle_(isolate, v8::Local<T>::Cast(value)) {
-  }
+      : handle_(isolate, v8::Local<T>::Cast(value)) {}
 
-  bool IsAlive() const {
-    return !handle_.IsEmpty();
-  }
+  bool IsAlive() const { return !handle_.IsEmpty(); }
 
   v8::Local<T> NewHandle(v8::Isolate* isolate) const {
     return v8::Local<T>::New(isolate, handle_);
@@ -93,15 +74,12 @@ class RefCountedGlobal : public base::RefCountedThreadSafe<RefCountedGlobal<T>,
 };
 
 SafeV8Function::SafeV8Function(v8::Isolate* isolate, v8::Local<v8::Value> value)
-    : v8_function_(new RefCountedGlobal<v8::Function>(isolate, value)) {
-}
+    : v8_function_(new RefCountedGlobal<v8::Function>(isolate, value)) {}
 
 SafeV8Function::SafeV8Function(const SafeV8Function& other)
-    : v8_function_(other.v8_function_) {
-}
+    : v8_function_(other.v8_function_) {}
 
-SafeV8Function::~SafeV8Function() {
-}
+SafeV8Function::~SafeV8Function() {}
 
 bool SafeV8Function::IsAlive() const {
   return v8_function_.get() && v8_function_->IsAlive();
@@ -112,22 +90,36 @@ v8::Local<v8::Function> SafeV8Function::NewHandle(v8::Isolate* isolate) const {
 }
 
 v8::Local<v8::Value> CreateFunctionFromTranslater(
-    v8::Isolate* isolate, const Translater& translater) {
+    v8::Isolate* isolate,
+    const Translater& translater) {
   // The FunctionTemplate is cached.
   if (g_call_translater.IsEmpty())
-    g_call_translater.Reset(
-        isolate,
-        mate::CreateFunctionTemplate(isolate, base::Bind(&CallTranslater)));
+    g_call_translater.Reset(isolate, mate::CreateFunctionTemplate(
+                                         isolate, base::Bind(&CallTranslater)));
 
   v8::Local<v8::FunctionTemplate> call_translater =
       v8::Local<v8::FunctionTemplate>::New(isolate, g_call_translater);
   auto* holder = new TranslaterHolder;
   holder->translater = translater;
-  return BindFunctionWith(isolate,
-                          isolate->GetCurrentContext(),
-                          call_translater->GetFunction(),
-                          v8::External::New(isolate, holder),
-                          v8::Object::New(isolate));
+  return BindFunctionWith(
+      isolate, isolate->GetCurrentContext(), call_translater->GetFunction(),
+      v8::External::New(isolate, holder), v8::Object::New(isolate));
+}
+
+// func.bind(func, arg1).
+// NB(zcbenz): Using C++11 version crashes VS.
+v8::Local<v8::Value> BindFunctionWith(v8::Isolate* isolate,
+                                      v8::Local<v8::Context> context,
+                                      v8::Local<v8::Function> func,
+                                      v8::Local<v8::Value> arg1,
+                                      v8::Local<v8::Value> arg2) {
+  v8::MaybeLocal<v8::Value> bind = func->Get(mate::StringToV8(isolate, "bind"));
+  CHECK(!bind.IsEmpty());
+  v8::Local<v8::Function> bind_func =
+      v8::Local<v8::Function>::Cast(bind.ToLocalChecked());
+  v8::Local<v8::Value> converted[] = {func, arg1, arg2};
+  return bind_func->Call(context, func, arraysize(converted), converted)
+      .ToLocalChecked();
 }
 
 }  // namespace internal

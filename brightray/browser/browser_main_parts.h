@@ -6,17 +6,15 @@
 #define BRIGHTRAY_BROWSER_BROWSER_MAIN_PARTS_H_
 
 #include <memory>
+#include <string>
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
+#include "base/path_service.h"
+#include "brightray/browser/brightray_paths.h"
+#include "brightray/browser/io_thread.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "ui/views/layout/layout_provider.h"
-
-#if defined(TOOLKIT_VIEWS)
-namespace brightray {
-class ViewsDelegate;
-}
-#endif
 
 #if defined(USE_AURA)
 namespace wm {
@@ -29,7 +27,9 @@ namespace brightray {
 class BrowserMainParts : public content::BrowserMainParts {
  public:
   BrowserMainParts();
-  ~BrowserMainParts();
+  ~BrowserMainParts() override;
+
+  IOThread* io_thread() const { return io_thread_.get(); }
 
  protected:
   // content::BrowserMainParts:
@@ -45,17 +45,17 @@ class BrowserMainParts : public content::BrowserMainParts {
  private:
 #if defined(OS_MACOSX)
   void InitializeMainNib();
+  void OverrideAppLogsPath();
 #endif
 
-#if defined(TOOLKIT_VIEWS)
-  std::unique_ptr<ViewsDelegate> views_delegate_;
-#endif
+  std::unique_ptr<IOThread> io_thread_;
 
 #if defined(USE_AURA)
   std::unique_ptr<wm::WMState> wm_state_;
 #endif
 
   std::unique_ptr<views::LayoutProvider> layout_provider_;
+  std::string custom_locale_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserMainParts);
 };

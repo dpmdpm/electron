@@ -16,18 +16,15 @@ class SubmenuButton : public views::MenuButton {
   SubmenuButton(const base::string16& title,
                 views::MenuButtonListener* menu_button_listener,
                 const SkColor& background_color);
-  virtual ~SubmenuButton();
+  ~SubmenuButton() override;
 
   void SetAcceleratorVisibility(bool visible);
   void SetUnderlineColor(SkColor color);
 
-  void SetEnabledColor(SkColor color);
-  void SetBackgroundColor(SkColor color);
-
   base::char16 accelerator() const { return accelerator_; }
 
   // views::MenuButton:
-  void OnPaint(gfx::Canvas* canvas) override;
+  void PaintButtonContents(gfx::Canvas* canvas) override;
 
   // views::InkDropHostView:
   std::unique_ptr<views::InkDropRipple> CreateInkDropRipple() const override;
@@ -36,9 +33,11 @@ class SubmenuButton : public views::MenuButton {
  private:
   bool GetUnderlinePosition(const base::string16& text,
                             base::char16* accelerator,
-                            int* start, int* end);
-  void GetCharacterPosition(
-      const base::string16& text, int index, int* pos);
+                            int* start,
+                            int* end) const;
+  void GetCharacterPosition(const base::string16& text,
+                            int index,
+                            int* pos) const;
 
   base::char16 accelerator_;
 

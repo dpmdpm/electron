@@ -4,7 +4,7 @@
     'product_name%': 'Electron',
     'company_name%': 'GitHub, Inc',
     'company_abbr%': 'github',
-    'version%': '1.7.6',
+    'version%': '0.0.0-dev',
     'js2c_input_dir': '<(SHARED_INTERMEDIATE_DIR)/js2c',
   },
   'includes': [
@@ -28,6 +28,16 @@
           'ENABLE_OSR',
         ],
       }],  # enable_osr==1
+      ['enable_pdf_viewer==1', {
+        'defines': [
+          'ENABLE_PDF_VIEWER',
+        ],
+      }],  # enable_pdf_viewer
+      ['enable_run_as_node==1', {
+        'defines': [
+          'ENABLE_RUN_AS_NODE',
+        ],
+      }],  # enable_run_as_node
     ],
   },
   'targets': [
@@ -122,6 +132,19 @@
                 },
               ],
             }],
+            ['mas_build==1', {
+              'dependencies': [
+                '<(project_name)_login_helper',
+              ],
+              'copies': [
+                {
+                  'destination': '<(PRODUCT_DIR)/<(product_name).app/Contents/Library/LoginItems',
+                  'files': [
+                    '<(PRODUCT_DIR)/<(product_name) Login Helper.app',
+                  ],
+                },
+              ],
+            }],
           ],
         }],  # OS!="mac"
         ['OS=="win"', {
@@ -142,6 +165,9 @@
               # of /SUBSYSTEM:WINDOWS,5.02
               'MinimumRequiredVersion': '5.02',
               'SubSystem': '2',
+              'AdditionalDependencies': [
+                'wtsapi32.lib',
+              ],
             },
           },
           'copies': [
@@ -225,9 +251,8 @@
       'type': 'static_library',
       'dependencies': [
         'atom_js2c',
-        'vendor/pdf_viewer/pdf_viewer.gyp:pdf_viewer',
         'brightray/brightray.gyp:brightray',
-        'vendor/node/node.gyp:node',
+        'vendor/node/node.gyp:node_lib',
       ],
       'defines': [
         # We need to access internal implementations of Node.
@@ -241,10 +266,18 @@
         'GLIB_DISABLE_DEPRECATION_WARNINGS',
         # Defined in Chromium but not exposed in its gyp file.
         'V8_USE_EXTERNAL_STARTUP_DATA',
-        'V8_SHARED',
+
+        # Import V8 symbols from shared library (node.dll / libnode.so)
         'USING_V8_SHARED',
         'USING_V8_PLATFORM_SHARED',
         'USING_V8_BASE_SHARED',
+
+        # See Chromium src/third_party/protobuf/BUILD.gn
+        'GOOGLE_PROTOBUF_NO_RTTI',
+        'GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER',
+
+        # Enables SkBitmap size 64 operations
+        'SK_SUPPORT_LEGACY_SAFESIZE64',
       ],
       'sources': [
         '<@(lib_sources)',
@@ -271,6 +304,13 @@
         '<(libchromiumcontent_src_dir)/third_party/',
         '<(libchromiumcontent_src_dir)/components/cdm',
         '<(libchromiumcontent_src_dir)/third_party/widevine',
+        '<(libchromiumcontent_src_dir)/third_party/widevine/cdm/stub',
+        '<(libchromiumcontent_src_dir)/third_party/protobuf/src',
+        # The 'third_party/webrtc/modules/desktop_capture/desktop_capture_options.h' is using 'rtc_base/constructormagic.h'.
+        '<(libchromiumcontent_src_dir)/third_party/webrtc',
+        # leveldb includes are required
+        '<(libchromiumcontent_src_dir)/third_party/leveldatabase/src',
+        '<(libchromiumcontent_src_dir)/third_party/leveldatabase/src/include',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -281,6 +321,11 @@
         'brightray/brightray.gyp:brightray',
       ],
       'conditions': [
+        ['enable_pdf_viewer==1', {
+          'dependencies': [
+            'vendor/pdf_viewer/pdf_viewer.gyp:pdf_viewer',
+          ],
+        }],  # enable_pdf_viewer
         ['libchromiumcontent_component', {
           'link_settings': {
             'libraries': [ '<@(libchromiumcontent_v8_libraries)' ],
@@ -328,6 +373,10 @@
           'xcode_settings': {
             # ReactiveCocoa which is used by Squirrel requires using __weak.
             'CLANG_ENABLE_OBJC_WEAK': 'YES',
+            'OTHER_CFLAGS': [
+              '-Wunguarded-availability',
+              '-Wobjc-missing-property-synthesis',
+            ],
           },
         }],  # OS=="mac" and mas_build==0
         ['OS=="mac" and mas_build==1', {
@@ -350,7 +399,7 @@
               # Make binary search for libraries under current directory, so we
               # don't have to manually set $LD_LIBRARY_PATH:
               # http://serverfault.com/questions/279068/cant-find-so-in-the-same-directory-as-the-executable
-              '-rpath \$$ORIGIN',
+              '-Wl,-rpath=\$$ORIGIN',
               # Make native module dynamic loading work.
               '-rdynamic',
             ],
@@ -358,7 +407,6 @@
           # Required settings of using breakpad.
           'cflags_cc': [
             '-Wno-empty-body',
-            '-Wno-reserved-user-defined-literal',
           ],
           'include_dirs': [
             'vendor/breakpad/src',
@@ -367,6 +415,12 @@
             'vendor/breakpad/breakpad.gyp:breakpad_client',
           ],
         }],  # OS=="linux"
+        ['OS=="linux" and clang==1', {
+          # Required settings of using breakpad.
+          'cflags_cc': [
+            '-Wno-reserved-user-defined-literal',
+          ],
+        }],  # OS=="linux" and clang==1
       ],
     },  # target <(product_name)_lib
     {
@@ -531,6 +585,7 @@
           'action': [
             'python',
             'tools/js2c.py',
+            'vendor/node',
             '<@(_outputs)',
             '<(js2c_input_dir)',
           ],
@@ -566,6 +621,8 @@
               '$(SDKROOT)/System/Library/Frameworks/Quartz.framework',
               '$(SDKROOT)/System/Library/Frameworks/Security.framework',
               '$(SDKROOT)/System/Library/Frameworks/SecurityInterface.framework',
+              '$(SDKROOT)/System/Library/Frameworks/ServiceManagement.framework',
+              '$(SDKROOT)/System/Library/Frameworks/StoreKit.framework',
             ],
           },
           'mac_bundle': 1,
@@ -575,7 +632,6 @@
             '<(libchromiumcontent_dir)/icudtl.dat',
             '<(libchromiumcontent_dir)/natives_blob.bin',
             '<(libchromiumcontent_dir)/snapshot_blob.bin',
-            '<(PRODUCT_DIR)/pdf_viewer_resources.pak',
           ],
           'xcode_settings': {
             'ATOM_BUNDLE_ID': 'com.<(company_abbr).<(project_name).framework',
@@ -643,6 +699,11 @@
             },
           ],
           'conditions': [
+            ['enable_pdf_viewer==1', {
+              'mac_bundle_resources': [
+                '<(PRODUCT_DIR)/pdf_viewer_resources.pak',
+              ],
+            }],  # enable_pdf_viewer
             ['mas_build==0', {
               'link_settings': {
                 'libraries': [
@@ -684,6 +745,32 @@
             ],
           },
         },  # target helper
+        {
+          'target_name': '<(project_name)_login_helper',
+          'product_name': '<(product_name) Login Helper',
+          'type': 'executable',
+          'sources': [
+            '<@(login_helper_sources)',
+          ],
+          'include_dirs': [
+            '.',
+            'vendor',
+            '<(libchromiumcontent_src_dir)',
+          ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/AppKit.framework',
+            ],
+          },
+          'mac_bundle': 1,
+          'xcode_settings': {
+            'ATOM_BUNDLE_ID': 'com.<(company_abbr).<(project_name).loginhelper',
+            'INFOPLIST_FILE': 'atom/app/resources/mac/loginhelper-Info.plist',
+            'OTHER_LDFLAGS': [
+              '-ObjC',
+            ],
+          },
+        },  # target login_helper
       ],
     }],  # OS!="mac"
   ],

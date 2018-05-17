@@ -24,7 +24,7 @@ class OffScreenWebContentsView : public content::WebContentsView,
                                  public content::RenderViewHostDelegateView {
  public:
   OffScreenWebContentsView(bool transparent, const OnPaintCallback& callback);
-  ~OffScreenWebContentsView();
+  ~OffScreenWebContentsView() override;
 
   void SetWebContents(content::WebContents*);
 
@@ -40,8 +40,8 @@ class OffScreenWebContentsView : public content::WebContentsView,
   void RestoreFocus() override;
   content::DropData* GetDropData() const override;
   gfx::Rect GetViewBounds() const override;
-  void CreateView(
-      const gfx::Size& initial_size, gfx::NativeView context) override;
+  void CreateView(const gfx::Size& initial_size,
+                  gfx::NativeView context) override;
   content::RenderWidgetHostViewBase* CreateViewForWidget(
       content::RenderWidgetHost* render_widget_host,
       bool is_guest_view_hack) override;
@@ -69,6 +69,11 @@ class OffScreenWebContentsView : public content::WebContentsView,
                      content::RenderWidgetHostImpl* source_rwh) override;
   void UpdateDragCursor(blink::WebDragOperation operation) override;
 
+  void SetPainting(bool painting);
+  bool IsPainting() const;
+  void SetFrameRate(int frame_rate);
+  int GetFrameRate() const;
+
  private:
 #if defined(OS_MACOSX)
   void PlatformCreate();
@@ -78,6 +83,8 @@ class OffScreenWebContentsView : public content::WebContentsView,
   OffScreenRenderWidgetHostView* GetView() const;
 
   const bool transparent_;
+  bool painting_;
+  int frame_rate_;
   OnPaintCallback callback_;
 
   // Weak refs.

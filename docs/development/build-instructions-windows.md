@@ -5,10 +5,10 @@ Follow the guidelines below for building Electron on Windows.
 ## Prerequisites
 
 * Windows 7 / Server 2008 R2 or higher
-* Visual Studio 2015 Update 3 - [download VS 2015 Community Edition for
-  free](https://www.visualstudio.com/en-us/products/visual-studio-community-vs.aspx)
+* Visual Studio 2017 - [download VS 2017 Community Edition for
+  free](https://www.visualstudio.com/vs/)
 * [Python 2.7](http://www.python.org/download/releases/2.7/)
-* [Node.js](http://nodejs.org/download/)
+* [Node.js](https://nodejs.org/download/)
 * [Git](http://git-scm.com)
 * [Debugging Tools for Windows](https://msdn.microsoft.com/en-us/library/windows/hardware/ff551063.aspx)
   if you plan on creating a full distribution since `symstore.exe` is used for
@@ -88,7 +88,7 @@ $ npm run clean
 
 To clean only `out` and `dist` directories:
 
-```bash
+```sh
 $ npm run clean-build
 ```
 
@@ -114,7 +114,7 @@ Make sure you have the latest Visual Studio update installed.
 If building under Cygwin, you may see `bootstrap.py` failed with following
 error:
 
-```
+```sh
 Assertion failed: ((handle))->activecnt >= 0, file src\win\pipe.c, line 1430
 
 Traceback (most recent call last):
@@ -143,7 +143,7 @@ Try reinstalling 32bit Node.js.
 
 ### Error: ENOENT, stat 'C:\Users\USERNAME\AppData\Roaming\npm'
 
-Simply making that directory [should fix the problem](http://stackoverflow.com/a/25095327/102704):
+Creating that directory [should fix the problem](https://stackoverflow.com/a/25095327/102704):
 
 ```powershell
 $ mkdir ~\AppData\Roaming\npm

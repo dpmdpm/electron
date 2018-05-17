@@ -19,8 +19,7 @@
 
 namespace {
 
-bool XDGUtilV(const std::vector<std::string>& argv,
-             const bool wait_for_exit) {
+bool XDGUtilV(const std::vector<std::string>& argv, const bool wait_for_exit) {
   base::LaunchOptions options;
   options.allow_new_privs = true;
   // xdg-open can fall back on mailcap which eventually might plumb through
@@ -75,11 +74,11 @@ bool ShowItemInFolder(const base::FilePath& full_path) {
   if (!base::DirectoryExists(dir))
     return false;
 
-  return XDGOpen(dir.value(), true);
+  return XDGOpen(dir.value(), false);
 }
 
 bool OpenItem(const base::FilePath& full_path) {
-  return XDGOpen(full_path.value(), true);
+  return XDGOpen(full_path.value(), false);
 }
 
 bool OpenExternal(const GURL& url, bool activate) {
@@ -91,7 +90,8 @@ bool OpenExternal(const GURL& url, bool activate) {
     return XDGOpen(url.spec(), false);
 }
 
-void OpenExternal(const GURL& url, bool activate,
+void OpenExternal(const GURL& url,
+                  bool activate,
                   const OpenExternalCallback& callback) {
   // TODO(gabriel): Implement async open if callback is specified
   callback.Run(OpenExternal(url, activate) ? "" : "Failed to open");

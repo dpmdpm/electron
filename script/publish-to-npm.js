@@ -21,7 +21,8 @@ const files = [
   'index.js',
   'install.js',
   'package.json',
-  'README.md'
+  'README.md',
+  'LICENSE'
 ]
 
 const jsonFields = [
@@ -49,9 +50,10 @@ new Promise((resolve, reject) => {
   tempDir = dirPath
   // copy files from `/npm` to temp directory
   files.forEach((name) => {
+    const noThirdSegment = name === 'README.md' || name === 'LICENSE'
     fs.writeFileSync(
       path.join(tempDir, name),
-      fs.readFileSync(path.join(__dirname, '..', name === 'README.md' ? '' : 'npm', name))
+      fs.readFileSync(path.join(__dirname, '..', noThirdSegment ? '' : 'npm', name))
     )
   })
   // copy from root package.json to temp/package.json
@@ -114,7 +116,7 @@ new Promise((resolve, reject) => {
       cwd: tempDir
     })
     const checkVersion = childProcess.execSync(`${path.join(tempDir, 'node_modules', '.bin', 'electron')} -v`)
-    assert.strictEqual(checkVersion.toString().trim(), `v${rootPackageJson.version}`)
+    assert.ok((`v${rootPackageJson.version}`.indexOf(checkVersion.toString().trim()) === 0), `Version is correct`)
     resolve(tarballPath)
   })
 })

@@ -7,6 +7,7 @@
 
 #import <Foundation/Foundation.h>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -19,7 +20,7 @@ class CocoaNotification : public Notification {
  public:
   CocoaNotification(NotificationDelegate* delegate,
                     NotificationPresenter* presenter);
-  ~CocoaNotification();
+  ~CocoaNotification() override;
 
   // Notification:
   void Show(const NotificationOptions& options) override;
@@ -27,13 +28,18 @@ class CocoaNotification : public Notification {
 
   void NotificationDisplayed();
   void NotificationReplied(const std::string& reply);
-  void NotificationButtonClicked();
+  void NotificationActivated();
+  void NotificationActivated(NSUserNotificationAction* action)
+    API_AVAILABLE(macosx(10.10));
 
   NSUserNotification* notification() const { return notification_; }
 
  private:
+  void LogAction(const char* action);
+
   base::scoped_nsobject<NSUserNotification> notification_;
-  int action_index_;
+  std::map<std::string, unsigned> additional_action_indices_;
+  unsigned action_index_;
 
   DISALLOW_COPY_AND_ASSIGN(CocoaNotification);
 };

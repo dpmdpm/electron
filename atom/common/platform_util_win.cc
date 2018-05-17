@@ -10,6 +10,7 @@
 #include <comdef.h>
 #include <commdlg.h>
 #include <dwmapi.h>
+#include <objbase.h>
 #include <shellapi.h>
 #include <shlobj.h>
 
@@ -34,8 +35,8 @@ namespace {
 // is empty. This function tells if it is.
 bool ValidateShellCommandForScheme(const std::string& scheme) {
   base::win::RegKey key;
-  base::string16 registry_path = base::ASCIIToUTF16(scheme) +
-                                 L"\\shell\\open\\command";
+  base::string16 registry_path =
+      base::ASCIIToUTF16(scheme) + L"\\shell\\open\\command";
   key.Open(HKEY_CLASSES_ROOT, registry_path.c_str(), KEY_READ);
   if (!key.Valid())
     return false;
@@ -59,25 +60,34 @@ class DeleteFileProgressSink : public IFileOperationProgressSink {
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID* ppvObj);
   HRESULT STDMETHODCALLTYPE StartOperations(void);
   HRESULT STDMETHODCALLTYPE FinishOperations(HRESULT);
-  HRESULT STDMETHODCALLTYPE PreRenameItem(
-      DWORD, IShellItem*, LPCWSTR);
-  HRESULT STDMETHODCALLTYPE PostRenameItem(
-      DWORD, IShellItem*, LPCWSTR, HRESULT, IShellItem*);
-  HRESULT STDMETHODCALLTYPE PreMoveItem(
-      DWORD, IShellItem*, IShellItem*, LPCWSTR);
-  HRESULT STDMETHODCALLTYPE PostMoveItem(
-      DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*);
-  HRESULT STDMETHODCALLTYPE PreCopyItem(
-      DWORD, IShellItem*, IShellItem*, LPCWSTR);
-  HRESULT STDMETHODCALLTYPE PostCopyItem(
-      DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*);
+  HRESULT STDMETHODCALLTYPE PreRenameItem(DWORD, IShellItem*, LPCWSTR);
+  HRESULT STDMETHODCALLTYPE
+  PostRenameItem(DWORD, IShellItem*, LPCWSTR, HRESULT, IShellItem*);
+  HRESULT STDMETHODCALLTYPE PreMoveItem(DWORD,
+                                        IShellItem*,
+                                        IShellItem*,
+                                        LPCWSTR);
+  HRESULT STDMETHODCALLTYPE
+  PostMoveItem(DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*);
+  HRESULT STDMETHODCALLTYPE PreCopyItem(DWORD,
+                                        IShellItem*,
+                                        IShellItem*,
+                                        LPCWSTR);
+  HRESULT STDMETHODCALLTYPE
+  PostCopyItem(DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*);
   HRESULT STDMETHODCALLTYPE PreDeleteItem(DWORD, IShellItem*);
-  HRESULT STDMETHODCALLTYPE PostDeleteItem(
-      DWORD, IShellItem*, HRESULT, IShellItem*);
-  HRESULT STDMETHODCALLTYPE PreNewItem(
-      DWORD, IShellItem*, LPCWSTR);
-  HRESULT STDMETHODCALLTYPE PostNewItem(
-      DWORD, IShellItem*, LPCWSTR, LPCWSTR, DWORD, HRESULT, IShellItem*);
+  HRESULT STDMETHODCALLTYPE PostDeleteItem(DWORD,
+                                           IShellItem*,
+                                           HRESULT,
+                                           IShellItem*);
+  HRESULT STDMETHODCALLTYPE PreNewItem(DWORD, IShellItem*, LPCWSTR);
+  HRESULT STDMETHODCALLTYPE PostNewItem(DWORD,
+                                        IShellItem*,
+                                        LPCWSTR,
+                                        LPCWSTR,
+                                        DWORD,
+                                        HRESULT,
+                                        IShellItem*);
   HRESULT STDMETHODCALLTYPE UpdateProgress(UINT, UINT);
   HRESULT STDMETHODCALLTYPE ResetTimer(void);
   HRESULT STDMETHODCALLTYPE PauseTimer(void);
@@ -143,43 +153,66 @@ HRESULT DeleteFileProgressSink::PreRenameItem(DWORD, IShellItem*, LPCWSTR) {
   return S_OK;
 }
 
-HRESULT DeleteFileProgressSink::PostRenameItem(
-    DWORD, IShellItem*, __RPC__in_string LPCWSTR, HRESULT, IShellItem*) {
+HRESULT DeleteFileProgressSink::PostRenameItem(DWORD,
+                                               IShellItem*,
+                                               __RPC__in_string LPCWSTR,
+                                               HRESULT,
+                                               IShellItem*) {
   return E_NOTIMPL;
 }
 
-HRESULT DeleteFileProgressSink::PreMoveItem(
-    DWORD, IShellItem*, IShellItem*, LPCWSTR) {
+HRESULT DeleteFileProgressSink::PreMoveItem(DWORD,
+                                            IShellItem*,
+                                            IShellItem*,
+                                            LPCWSTR) {
   return E_NOTIMPL;
 }
 
-HRESULT DeleteFileProgressSink::PostMoveItem(
-    DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*) {
+HRESULT DeleteFileProgressSink::PostMoveItem(DWORD,
+                                             IShellItem*,
+                                             IShellItem*,
+                                             LPCWSTR,
+                                             HRESULT,
+                                             IShellItem*) {
   return E_NOTIMPL;
 }
 
-HRESULT DeleteFileProgressSink::PreCopyItem(
-    DWORD, IShellItem*, IShellItem*, LPCWSTR) {
+HRESULT DeleteFileProgressSink::PreCopyItem(DWORD,
+                                            IShellItem*,
+                                            IShellItem*,
+                                            LPCWSTR) {
   return E_NOTIMPL;
 }
 
-HRESULT DeleteFileProgressSink::PostCopyItem(
-    DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*) {
+HRESULT DeleteFileProgressSink::PostCopyItem(DWORD,
+                                             IShellItem*,
+                                             IShellItem*,
+                                             LPCWSTR,
+                                             HRESULT,
+                                             IShellItem*) {
   return E_NOTIMPL;
 }
 
-HRESULT DeleteFileProgressSink::PostDeleteItem(
-    DWORD, IShellItem*, HRESULT, IShellItem*) {
+HRESULT DeleteFileProgressSink::PostDeleteItem(DWORD,
+                                               IShellItem*,
+                                               HRESULT,
+                                               IShellItem*) {
   return S_OK;
 }
 
-HRESULT DeleteFileProgressSink::PreNewItem(
-    DWORD dwFlags, IShellItem*, LPCWSTR) {
+HRESULT DeleteFileProgressSink::PreNewItem(DWORD dwFlags,
+                                           IShellItem*,
+                                           LPCWSTR) {
   return E_NOTIMPL;
 }
 
-HRESULT DeleteFileProgressSink::PostNewItem(
-    DWORD, IShellItem*, LPCWSTR, LPCWSTR, DWORD, HRESULT, IShellItem*) {
+HRESULT DeleteFileProgressSink::PostNewItem(DWORD,
+                                            IShellItem*,
+                                            LPCWSTR,
+                                            LPCWSTR,
+                                            DWORD,
+                                            HRESULT,
+                                            IShellItem*) {
   return E_NOTIMPL;
 }
 
@@ -213,14 +246,12 @@ bool ShowItemInFolder(const base::FilePath& full_path) {
   if (dir.empty())
     return false;
 
-  typedef HRESULT (WINAPI *SHOpenFolderAndSelectItemsFuncPtr)(
-      PCIDLIST_ABSOLUTE pidl_Folder,
-      UINT cidl,
-      PCUITEMID_CHILD_ARRAY pidls,
+  typedef HRESULT(WINAPI * SHOpenFolderAndSelectItemsFuncPtr)(
+      PCIDLIST_ABSOLUTE pidl_Folder, UINT cidl, PCUITEMID_CHILD_ARRAY pidls,
       DWORD flags);
 
   static SHOpenFolderAndSelectItemsFuncPtr open_folder_and_select_itemsPtr =
-    NULL;
+      NULL;
   static bool initialize_open_folder_proc = true;
   if (initialize_open_folder_proc) {
     initialize_open_folder_proc = false;
@@ -235,35 +266,35 @@ bool ShowItemInFolder(const base::FilePath& full_path) {
       return false;
     }
     open_folder_and_select_itemsPtr =
-        reinterpret_cast<SHOpenFolderAndSelectItemsFuncPtr>
-            (GetProcAddress(shell32_base, "SHOpenFolderAndSelectItems"));
+        reinterpret_cast<SHOpenFolderAndSelectItemsFuncPtr>(
+            GetProcAddress(shell32_base, "SHOpenFolderAndSelectItems"));
   }
   if (!open_folder_and_select_itemsPtr) {
     return ui::win::OpenFolderViaShell(dir);
   }
 
   base::win::ScopedComPtr<IShellFolder> desktop;
-  HRESULT hr = SHGetDesktopFolder(desktop.Receive());
+  HRESULT hr = SHGetDesktopFolder(desktop.GetAddressOf());
   if (FAILED(hr))
     return false;
 
   base::win::ScopedCoMem<ITEMIDLIST> dir_item;
   hr = desktop->ParseDisplayName(NULL, NULL,
-                                 const_cast<wchar_t *>(dir.value().c_str()),
+                                 const_cast<wchar_t*>(dir.value().c_str()),
                                  NULL, &dir_item, NULL);
   if (FAILED(hr)) {
     return ui::win::OpenFolderViaShell(dir);
   }
 
   base::win::ScopedCoMem<ITEMIDLIST> file_item;
-  hr = desktop->ParseDisplayName(NULL, NULL,
-      const_cast<wchar_t *>(full_path.value().c_str()),
-      NULL, &file_item, NULL);
+  hr = desktop->ParseDisplayName(
+      NULL, NULL, const_cast<wchar_t*>(full_path.value().c_str()), NULL,
+      &file_item, NULL);
   if (FAILED(hr)) {
     return ui::win::OpenFolderViaShell(dir);
   }
 
-  const ITEMIDLIST* highlight[] = { file_item };
+  const ITEMIDLIST* highlight[] = {file_item};
 
   hr = (*open_folder_and_select_itemsPtr)(dir_item, arraysize(highlight),
                                           highlight, NULL);
@@ -278,13 +309,11 @@ bool ShowItemInFolder(const base::FilePath& full_path) {
   } else {
     LPTSTR message = NULL;
     DWORD message_length = FormatMessage(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-        0, hr, 0, reinterpret_cast<LPTSTR>(&message), 0, NULL);
-    LOG(WARNING) << " " << __FUNCTION__
-                 << "(): Can't open full_path = \""
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, 0, hr, 0,
+        reinterpret_cast<LPTSTR>(&message), 0, NULL);
+    LOG(WARNING) << " " << __FUNCTION__ << "(): Can't open full_path = \""
                  << full_path.value() << "\""
-                 << " hr = " << hr
-                 << " " << reinterpret_cast<LPTSTR>(&message);
+                 << " hr = " << hr << " " << reinterpret_cast<LPTSTR>(&message);
     if (message)
       LocalFree(message);
 
@@ -305,9 +334,9 @@ bool OpenExternal(const base::string16& url, bool activate) {
   // have been escaped.
   base::string16 escaped_url = L"\"" + url + L"\"";
 
-  if (reinterpret_cast<ULONG_PTR>(ShellExecuteW(NULL, L"open",
-                                                escaped_url.c_str(), NULL, NULL,
-                                                SW_SHOWNORMAL)) <= 32) {
+  if (reinterpret_cast<ULONG_PTR>(ShellExecuteW(
+          NULL, L"open", escaped_url.c_str(), NULL, NULL, SW_SHOWNORMAL)) <=
+      32) {
     // We fail to execute the call. We could display a message to the user.
     // TODO(nsylvain): we should also add a dialog to warn on errors. See
     // bug 1136923.
@@ -316,7 +345,8 @@ bool OpenExternal(const base::string16& url, bool activate) {
   return true;
 }
 
-void OpenExternal(const base::string16& url, bool activate,
+void OpenExternal(const base::string16& url,
+                  bool activate,
                   const OpenExternalCallback& callback) {
   // TODO(gabriel): Implement async open if callback is specified
   callback.Run(OpenExternal(url, activate) ? "" : "Failed to open");
@@ -328,7 +358,8 @@ bool MoveItemToTrash(const base::FilePath& path) {
     return false;
 
   base::win::ScopedComPtr<IFileOperation> pfo;
-  if (FAILED(pfo.CreateInstance(CLSID_FileOperation)))
+  if (FAILED(::CoCreateInstance(CLSID_FileOperation, nullptr, CLSCTX_ALL,
+                                IID_PPV_ARGS(&pfo))))
     return false;
 
   // Elevation prompt enabled for UAC protected files.  This overrides the
@@ -337,28 +368,23 @@ bool MoveItemToTrash(const base::FilePath& path) {
   if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
     // Windows 8 introduces the flag RECYCLEONDELETE and deprecates the
     // ALLOWUNDO in favor of ADDUNDORECORD.
-    if (FAILED(pfo->SetOperationFlags(FOF_NO_UI |
-                                      FOFX_ADDUNDORECORD |
-                                      FOF_NOERRORUI |
-                                      FOF_SILENT |
-                                      FOFX_SHOWELEVATIONPROMPT |
-                                      FOFX_RECYCLEONDELETE)))
+    if (FAILED(pfo->SetOperationFlags(
+            FOF_NO_UI | FOFX_ADDUNDORECORD | FOF_NOERRORUI | FOF_SILENT |
+            FOFX_SHOWELEVATIONPROMPT | FOFX_RECYCLEONDELETE)))
       return false;
   } else {
     // For Windows 7 and Vista, RecycleOnDelete is the default behavior.
-    if (FAILED(pfo->SetOperationFlags(FOF_NO_UI |
-                                      FOF_ALLOWUNDO |
-                                      FOF_NOERRORUI |
-                                      FOF_SILENT |
+    if (FAILED(pfo->SetOperationFlags(FOF_NO_UI | FOF_ALLOWUNDO |
+                                      FOF_NOERRORUI | FOF_SILENT |
                                       FOFX_SHOWELEVATIONPROMPT)))
       return false;
   }
 
   // Create an IShellItem from the supplied source path.
   base::win::ScopedComPtr<IShellItem> delete_item;
-  if (FAILED(SHCreateItemFromParsingName(path.value().c_str(),
-                                         NULL,
-                                         IID_PPV_ARGS(delete_item.Receive()))))
+  if (FAILED(SHCreateItemFromParsingName(
+          path.value().c_str(), NULL,
+          IID_PPV_ARGS(delete_item.GetAddressOf()))))
     return false;
 
   base::win::ScopedComPtr<IFileOperationProgressSink> delete_sink(
@@ -368,7 +394,7 @@ bool MoveItemToTrash(const base::FilePath& path) {
 
   // Processes the queued command DeleteItem. This will trigger
   // the DeleteFileProgressSink to check for Recycle Bin.
-  return SUCCEEDED(pfo->DeleteItem(delete_item.get(), delete_sink.get())) &&
+  return SUCCEEDED(pfo->DeleteItem(delete_item.Get(), delete_sink.Get())) &&
          SUCCEEDED(pfo->PerformOperations());
 }
 

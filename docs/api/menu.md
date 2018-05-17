@@ -1,6 +1,5 @@
 ## Class: Menu
 
-
 > Create native application menus and context menus.
 
 Process: [Main](../glossary.md#main-process)
@@ -15,7 +14,7 @@ The `menu` class has the following static methods:
 
 #### `Menu.setApplicationMenu(menu)`
 
-* `menu` Menu
+* `menu` Menu | null
 
 Sets `menu` as the application menu on macOS. On Windows and Linux, the
 `menu` will be set as each window's top menu.
@@ -27,7 +26,7 @@ effect on macOS.
 
 #### `Menu.getApplicationMenu()`
 
-Returns `Menu` - The application menu, if set, or `null`, if not set.
+Returns `Menu | null` - The application menu, if set, or `null`, if not set.
 
 **Note:** The returned `Menu` instance doesn't support dynamic addition or
 removal of menu items. [Instance properties](#instance-properties) can still
@@ -38,7 +37,7 @@ be dynamically modified.
 * `action` String
 
 Sends the `action` to the first responder of application. This is used for
-emulating default macOS menu behaviors. Usually you would just use the
+emulating default macOS menu behaviors. Usually you would use the
 [`role`](menu-item.md#roles) property of a [`MenuItem`](menu-item.md).
 
 See the [macOS Cocoa Event Handling Guide](https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/EventOverview/EventArchitecture/EventArchitecture.html#//apple_ref/doc/uid/10000060i-CH3-SW7)
@@ -50,7 +49,7 @@ for more information on macOS' native actions.
 
 Returns `Menu`
 
-Generally, the `template` is just an array of `options` for constructing a
+Generally, the `template` is an array of `options` for constructing a
 [MenuItem](menu-item.md). The usage can be referenced above.
 
 You can also attach other fields to the element of the `template` and they
@@ -60,41 +59,68 @@ will become properties of the constructed menu items.
 
 The `menu` object has the following instance methods:
 
-#### `menu.popup([browserWindow, options])`
+#### `menu.popup(options)`
 
-* `browserWindow` BrowserWindow (optional) - Default is the focused window.
-* `options` Object (optional)
+* `options` Object
+  * `window` [BrowserWindow](browser-window.md) (optional) - Default is the focused window.
   * `x` Number (optional) - Default is the current mouse cursor position.
     Must be declared if `y` is declared.
   * `y` Number (optional) - Default is the current mouse cursor position.
     Must be declared if `x` is declared.
-  * `async` Boolean (optional) - Set to `true` to have this method return
-    immediately called, `false` to return after the menu has been selected
-    or closed. Defaults to `false`.
   * `positioningItem` Number (optional) _macOS_ - The index of the menu item to
     be positioned under the mouse cursor at the specified coordinates. Default
     is -1.
+  * `callback` Function (optional) - Called when menu is closed.
 
-Pops up this menu as a context menu in the `browserWindow`.
+Pops up this menu as a context menu in the [`BrowserWindow`](browser-window.md).
 
 #### `menu.closePopup([browserWindow])`
 
-* `browserWindow` BrowserWindow (optional) - Default is the focused window.
+* `browserWindow` [BrowserWindow](browser-window.md) (optional) - Default is the focused window.
 
 Closes the context menu in the `browserWindow`.
 
 #### `menu.append(menuItem)`
 
-* `menuItem` MenuItem
+* `menuItem` [MenuItem](menu-item.md)
 
 Appends the `menuItem` to the menu.
+
+#### `menu.getMenuItemById(id)`
+
+* `id` String
+
+Returns `MenuItem` the item with the specified `id`
 
 #### `menu.insert(pos, menuItem)`
 
 * `pos` Integer
-* `menuItem` MenuItem
+* `menuItem` [MenuItem](menu-item.md)
 
 Inserts the `menuItem` to the `pos` position of the menu.
+
+### Instance Events
+
+Objects created with `new Menu` emit the following events:
+
+**Note:** Some events are only available on specific operating systems and are
+labeled as such.
+
+#### Event: 'menu-will-show'
+
+Returns:
+
+* `event` Event
+
+Emitted when `menu.popup()` is called.
+
+#### Event: 'menu-will-close'
+
+Returns:
+
+* `event` Event
+
+Emitted when a popup is closed either manually or with `menu.closePopup()`.
 
 ### Instance Properties
 
@@ -106,6 +132,11 @@ A `MenuItem[]` array containing the menu's items.
 
 Each `Menu` consists of multiple [`MenuItem`](menu-item.md)s and each `MenuItem`
 can have a submenu.
+
+### Instance Events
+
+Objects created with `new Menu` or returned by `Menu.buildFromTemplate` emit
+the following events:
 
 ## Examples
 
@@ -161,7 +192,7 @@ const template = [
     submenu: [
       {
         label: 'Learn More',
-        click () { require('electron').shell.openExternal('https://electron.atom.io') }
+        click () { require('electron').shell.openExternal('https://electronjs.org') }
       }
     ]
   }
@@ -228,7 +259,7 @@ menu.append(new MenuItem({label: 'MenuItem2', type: 'checkbox', checked: true}))
 
 window.addEventListener('contextmenu', (e) => {
   e.preventDefault()
-  menu.popup(remote.getCurrentWindow())
+  menu.popup({window: remote.getCurrentWindow()})
 }, false)
 </script>
 ```
@@ -271,27 +302,20 @@ browser windows.
 
 ## Menu Item Position
 
-You can make use of `position` and `id` to control how the item will be placed
-when building a menu with `Menu.buildFromTemplate`.
+You can make use of `before`, `after`, `beforeGroupContaining`, `afterGroupContaining` and `id` to control how the item will be placed when building a menu with `Menu.buildFromTemplate`.
 
-The `position` attribute of `MenuItem` has the form `[placement]=[id]`, where
-`placement` is one of `before`, `after`, or `endof` and `id` is the unique ID of
-an existing item in the menu:
-
-* `before` - Inserts this item before the id referenced item. If the
+* `before` - Inserts this item before the item with the specified label. If the
   referenced item doesn't exist the item will be inserted at the end of
-  the menu.
-* `after` - Inserts this item after id referenced item. If the referenced
-  item doesn't exist the item will be inserted at the end of the menu.
-* `endof` - Inserts this item at the end of the logical group containing
-  the id referenced item (groups are created by separator items). If
-  the referenced item doesn't exist, a new separator group is created with
-  the given id and this item is inserted after that separator.
+  the menu. Also implies that the menu item in question should be placed in the same “group” as the item.
+* `after` - Inserts this item after the item with the specified label. If the
+  referenced item doesn't exist the item will be inserted at the end of
+  the menu. Also implies that the menu item in question should be placed in the same “group” as the item.
+* `beforeGroupContaining` - Provides a means for a single context menu to declare
+  the placement of their containing group before the containing group of the item with the specified label.
+* `afterGroupContaining` - Provides a means for a single context menu to declare
+  the placement of their containing group after the containing group of the item with the specified label.
 
-When an item is positioned, all un-positioned items are inserted after
-it until a new item is positioned. So if you want to position a group of
-menu items in the same location you only need to specify a position for
-the first item.
+By default, items will be inserted in the order they exist in the template unless one of the specified positioning keywords is used.
 
 ### Examples
 
@@ -299,48 +323,63 @@ Template:
 
 ```javascript
 [
-  {label: '4', id: '4'},
-  {label: '5', id: '5'},
-  {label: '1', id: '1', position: 'before=4'},
-  {label: '2', id: '2'},
-  {label: '3', id: '3'}
+  { id: '1', label: 'one' },
+  { id: '2', label: 'two' },
+  { id: '3', label: 'three' },
+  { id: '4', label: 'four' }
 ]
 ```
 
 Menu:
 
-```
+```sh
 - 1
 - 2
 - 3
 - 4
-- 5
 ```
 
 Template:
 
 ```javascript
 [
-  {label: 'a', position: 'endof=letters'},
-  {label: '1', position: 'endof=numbers'},
-  {label: 'b', position: 'endof=letters'},
-  {label: '2', position: 'endof=numbers'},
-  {label: 'c', position: 'endof=letters'},
-  {label: '3', position: 'endof=numbers'}
+  { id: '1', label: 'one' },
+  { type: 'separator' },
+  { id: '3', label: 'three', beforeGroupContaining: ['1'] },
+  { id: '4', label: 'four', afterGroupContaining: ['2'] },
+  { type: 'separator' },
+  { id: '2', label: 'two' }
 ]
 ```
 
 Menu:
 
-```
-- ---
-- a
-- b
-- c
+```sh
+- 3
+- 4
 - ---
 - 1
+- ---
 - 2
+```
+
+Template:
+
+```javascript
+[
+  { id: '1', label: 'one', after: ['3'] },
+  { id: '2', label: 'two', before: ['1'] },
+  { id: '3', label: 'three' }
+]
+```
+
+Menu:
+
+```sh
+- ---
 - 3
+- 2
+- 1
 ```
 
 [AboutInformationPropertyListFiles]: https://developer.apple.com/library/ios/documentation/general/Reference/InfoPlistKeyReference/Articles/AboutInformationPropertyListFiles.html

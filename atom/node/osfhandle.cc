@@ -4,8 +4,6 @@
 
 #include "osfhandle.h"
 
-#include <io.h>
-
 #if !defined(DEBUG)
 #define U_I18N_IMPLEMENTATION
 #define U_COMMON_IMPLEMENTATION
@@ -25,20 +23,12 @@
 #include "third_party/icu/source/i18n/unicode/ucsdet.h"
 #include "third_party/icu/source/i18n/unicode/ulocdata.h"
 #include "third_party/icu/source/i18n/unicode/uregex.h"
-#include "third_party/icu/source/i18n/unicode/uspoof.h"
 #include "third_party/icu/source/i18n/unicode/usearch.h"
-#include "v8-profiler.h"
+#include "third_party/icu/source/i18n/unicode/uspoof.h"
 #include "v8-inspector.h"
+#include "v8-profiler.h"
 
 namespace node {
-
-int open_osfhandle(intptr_t osfhandle, int flags) {
-  return _open_osfhandle(osfhandle, flags);
-}
-
-int close(int fd) {
-  return _close(fd);
-}
 
 void ReferenceSymbols() {
   // Following symbols are used by electron.exe but got stripped by compiler,
@@ -48,8 +38,8 @@ void ReferenceSymbols() {
   // v8_profiler symbols:
   v8::TracingCpuProfiler::Create(nullptr);
   // v8_inspector symbols:
-  reinterpret_cast<v8_inspector::V8InspectorSession*>(nullptr)->
-      canDispatchMethod(v8_inspector::StringView());
+  reinterpret_cast<v8_inspector::V8InspectorSession*>(nullptr)
+      ->canDispatchMethod(v8_inspector::StringView());
   reinterpret_cast<v8_inspector::V8InspectorClient*>(nullptr)->unmuteMetrics(0);
   // icu symbols:
   u_errorName(U_ZERO_ERROR);
@@ -69,6 +59,9 @@ void ReferenceSymbols() {
   icu::DateIntervalFormat::createInstance(UnicodeString(),
                                           icu::Locale::getRoot(), status);
   reinterpret_cast<icu::Transliterator*>(nullptr)->clone();
+  UParseError parse_error;
+  icu::Transliterator::createFromRules(UnicodeString(), UnicodeString(),
+                                       UTRANS_FORWARD, parse_error, status);
 }
 
 }  // namespace node

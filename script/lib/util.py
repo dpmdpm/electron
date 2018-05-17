@@ -161,11 +161,11 @@ def safe_mkdir(path):
       raise
 
 
-def execute(argv, env=os.environ):
+def execute(argv, env=os.environ, cwd=None):
   if is_verbose_mode():
     print ' '.join(argv)
   try:
-    output = subprocess.check_output(argv, stderr=subprocess.STDOUT, env=env)
+    output = subprocess.check_output(argv, stderr=subprocess.STDOUT, env=env, cwd=cwd)
     if is_verbose_mode():
       print output
     return output
@@ -183,7 +183,7 @@ def execute_stdout(argv, env=os.environ, cwd=None):
       print e.output
       raise e
   else:
-    execute(argv, env)
+    execute(argv, env, cwd)
 
 
 def electron_gyp():
@@ -193,6 +193,12 @@ def electron_gyp():
     obj = eval(f.read());
     return obj['variables']
 
+def electron_features():
+  SOURCE_ROOT = os.path.abspath(os.path.join(__file__, '..', '..', '..'))
+  gyp = os.path.join(SOURCE_ROOT, 'features.gypi')
+  with open(gyp) as f:
+    obj = eval(f.read());
+    return obj['variables']['variables']
 
 def get_electron_version():
   return 'v' + electron_gyp()['version%']
@@ -246,7 +252,7 @@ def import_vs_env(target_arch):
     vs_arch = 'amd64_x86'
   else:
     vs_arch = 'x86_amd64'
-  env = get_vs_env('14.0', vs_arch)
+  env = get_vs_env('[15.0,16.0)', vs_arch)
   os.environ.update(env)
 
 

@@ -4,11 +4,12 @@
 
 #include "chrome/browser/icon_loader.h"
 
-#include <windows.h>
 #include <shellapi.h>
+#include <windows.h>
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/task_scheduler/post_task.h"
 #include "base/threading/thread.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/display/win/dpi.h"
@@ -29,8 +30,10 @@ IconLoader::IconGroup IconLoader::GroupForFilepath(
 }
 
 // static
-content::BrowserThread::ID IconLoader::ReadIconThreadID() {
-  return content::BrowserThread::FILE;
+scoped_refptr<base::TaskRunner> IconLoader::GetReadIconTaskRunner() {
+  // Technically speaking, only a thread with COM is needed, not one that has
+  // a COM STA. However, this is what is available for now.
+  return base::CreateCOMSTATaskRunnerWithTraits(traits());
 }
 
 void IconLoader::ReadIcon() {
@@ -49,24 +52,24 @@ void IconLoader::ReadIcon() {
       NOTREACHED();
   }
 
-  image_.reset();
+  std::unique_ptr<gfx::Image> image;
 
-  SHFILEINFO file_info = { 0 };
+  SHFILEINFO file_info = {0};
   if (SHGetFileInfo(group_.c_str(), FILE_ATTRIBUTE_NORMAL, &file_info,
-                     sizeof(SHFILEINFO),
-                     SHGFI_ICON | size | SHGFI_USEFILEATTRIBUTES)) {
+                    sizeof(SHFILEINFO),
+                    SHGFI_ICON | size | SHGFI_USEFILEATTRIBUTES)) {
     std::unique_ptr<SkBitmap> bitmap(
         IconUtil::CreateSkBitmapFromHICON(file_info.hIcon));
     if (bitmap.get()) {
-      gfx::ImageSkia image_skia(gfx::ImageSkiaRep(*bitmap,
-                                                  display::win::GetDPIScale()));
+      gfx::ImageSkia image_skia(
+          gfx::ImageSkiaRep(*bitmap, display::win::GetDPIScale()));
       image_skia.MakeThreadSafe();
-      image_.reset(new gfx::Image(image_skia));
+      image = std::make_unique<gfx::Image>(image_skia);
       DestroyIcon(file_info.hIcon);
     }
   }
 
   target_task_runner_->PostTask(
-      FROM_HERE, base::Bind(callback_, base::Passed(&image_), group_));
+      FROM_HERE, base::Bind(callback_, base::Passed(&image), group_));
   delete this;
 }

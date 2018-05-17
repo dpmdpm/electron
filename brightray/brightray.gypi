@@ -31,7 +31,7 @@
       'GCC_ENABLE_CPP_EXCEPTIONS': 'NO',
       'GCC_ENABLE_CPP_RTTI': 'NO',
       'GCC_TREAT_WARNINGS_AS_ERRORS': 'YES',
-      'CLANG_CXX_LANGUAGE_STANDARD': 'c++11',
+      'CLANG_CXX_LANGUAGE_STANDARD': 'c++14',
       'MACOSX_DEPLOYMENT_TARGET': '10.9',
       'RUN_CLANG_STATIC_ANALYZER': 'YES',
       'USE_HEADER_MAP': 'NO',
@@ -54,11 +54,6 @@
         'WarningLevel': '4',
         'WarnAsError': 'true',
         'DebugInformationFormat': '3',
-        # Programs that use the Standard C++ library must be compiled with
-        # C++
-        # exception handling enabled.
-        # http://support.microsoft.com/kb/154419
-        'ExceptionHandling': 1,
       },
       'VCLinkerTool': {
         'GenerateDebugInformation': 'true',
@@ -92,10 +87,10 @@
       'Common_Base': {
         'abstract': 1,
         'defines': [
-          # We are using Release version libchromiumcontent:
-          'NDEBUG',
           # Needed by gin:
           'V8_USE_EXTERNAL_STARTUP_DATA',
+          # Special configuration for node:
+          'V8_PROMISE_INTERNAL_FIELD_COUNT=1',
           # From skia_for_chromium_defines.gypi:
           'SK_SUPPORT_LEGACY_GETTOPDEVICE',
           'SK_SUPPORT_LEGACY_BITMAP_CONFIG',
@@ -126,17 +121,32 @@
               'USE_NSS',  # deprecated after Chrome 45.
             ],
           }],
+          ['OS in ["linux", "mac"]', {
+            'defines': [
+              'WEBRTC_POSIX',
+              'UCHAR_TYPE=uint16_t',
+            ],
+          }],
           ['OS=="linux"', {
             'defines': [
               '_LARGEFILE_SOURCE',
               '_LARGEFILE64_SOURCE',
               '_FILE_OFFSET_BITS=64',
+              'WEBRTC_LINUX',
             ],
             'cflags_cc': [
               '-D__STRICT_ANSI__',
               '-fno-rtti',
             ],
+            'ldflags': [
+              '-Wl,-z,noexecstack',
+            ],
           }],  # OS=="linux"
+          ['OS=="linux" and target_arch in ["ia32", "x64", "arm64"]', {
+            'ldflags': [
+              '-fuse-ld=lld',  # Chromium Clang uses lld for linking
+            ],
+          }],  # OS=="linux" and target_arch in ["ia32", "x64", "arm64"]
           ['OS=="mac"', {
             'defines': [
               # The usage of "webrtc/modules/desktop_capture/desktop_capture_options.h"
@@ -163,6 +173,7 @@
               # The usage of "webrtc/modules/desktop_capture/desktop_capture_options.h"
               # is required to see this macro.
               'WEBRTC_WIN',
+              'UCHAR_TYPE=wchar_t',
             ],
             'conditions': [
               ['target_arch=="x64"', {
@@ -189,6 +200,7 @@
           # Use this instead of "NDEBUG" to determine whether we are in
           # Debug build, because "NDEBUG" is already used by Chromium.
           'DEBUG',
+          '_DEBUG',
           # Require when using libchromiumcontent.
           'COMPONENT_BUILD',
           'GURL_DLL',
@@ -198,22 +210,37 @@
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
-            'RuntimeLibrary': '2',  # /MD (nondebug DLL)
+            'RuntimeLibrary': '3',  # /MDd (debug DLL)
             'Optimization': '0',  # 0 = /Od
             # See http://msdn.microsoft.com/en-us/library/8wtf2dfz(VS.71).aspx
             'BasicRuntimeChecks': '3',  # 3 = all checks enabled, 0 = off
           },
+          'VCLinkerTool': {
+            'OptimizeReferences': 2, # /OPT:REF
+            'EnableCOMDATFolding': 2, # /OPT:ICF
+          },
         },
+        'conditions': [
+          ['OS=="linux" and target_arch=="x64"', {
+            'defines': [
+              '_GLIBCXX_DEBUG',
+            ],
+            'cflags': [
+              '-g',
+            ],
+          }],  # OS=="linux"
+        ],
       },  # Debug_Base
       'Release_Base': {
         'abstract': 1,
+        'defines': [
+          'NDEBUG',
+        ],
         'msvs_settings': {
           'VCCLCompilerTool': {
             'RuntimeLibrary': '2',  # /MD (nondebug DLL)
-            # 1, optimizeMinSpace, Minimize Size (/O1)
-            'Optimization': '1',
-            # 2, favorSize - Favor small code (/Os)
-            'FavorSizeOrSpeed': '2',
+            'Optimization': '2',  # /O2
+            'WholeProgramOptimization': 'true',  # /GL
             # See http://msdn.microsoft.com/en-us/library/47238hez(VS.71).aspx
             'InlineFunctionExpansion': '2',  # 2 = max
             # See http://msdn.microsoft.com/en-us/library/2kxx5t2c(v=vs.80).aspx
@@ -223,11 +250,24 @@
             # perform FPO regardless, so we must explicitly disable.
             # We still want the false setting above to avoid having
             # "/Oy /Oy-" and warnings about overriding.
-            'AdditionalOptions': ['/Oy-'],
+            'AdditionalOptions': ['/Oy-', '/d2guard4'],
+          },
+          'VCLibrarianTool': {
+            'LinkTimeCodeGeneration': 'true',  # /LTCG
           },
           'VCLinkerTool': {
+            # Control Flow Guard is a security feature in Windows
+            # 8.1 and higher designed to prevent exploitation of
+            # indirect calls in executables.
+            # Control Flow Guard is enabled using the /d2guard4
+            # compiler setting in combination with the /guard:cf
+            # linker setting.
+            'AdditionalOptions': ['/guard:cf'],
             # Turn off incremental linking to save binary size.
             'LinkIncremental': '1',  # /INCREMENTAL:NO
+            'LinkTimeCodeGeneration': '1',  # /LTCG
+            'OptimizeReferences': 2,  # /OPT:REF
+            'EnableCOMDATFolding': 2,  # /OPT:ICF
           },
         },
         'conditions': [
@@ -252,6 +292,18 @@
               '-Wl,--gc-sections',
             ],
           }],  # OS=="linux"
+          ['OS=="linux" and target_arch in ["ia32", "x64", "arm64"]', {
+            'cflags': [
+              '-flto=thin',
+            ],
+            'ldflags': [
+              '-flto=thin',
+              '-Wl,--icf=all',
+              '-Wl,--lto-O0',  # this could be removed in future; see https://codereview.chromium.org/2939923004
+              '-Wl,-mllvm,-function-sections',
+              '-Wl,-mllvm,-data-sections',
+            ],
+          }],
         ],
       },  # Release_Base
       'conditions': [
@@ -327,13 +379,15 @@
             '-Wno-undefined-var-template', # https://crbug.com/604888
             '-Wno-unneeded-internal-declaration',
             '-Wno-inconsistent-missing-override',
+            '-Wno-tautological-unsigned-enum-zero-compare',
           ],
         },
       }],
-      ['OS=="linux"', {
+      ['OS=="linux" and clang==1', {
         'cflags': [
           '-Wno-inconsistent-missing-override',
           '-Wno-undefined-var-template', # https://crbug.com/604888
+          '-Wno-tautological-unsigned-enum-zero-compare',
         ],
       }],
       ['OS=="win"', {
@@ -356,6 +410,7 @@
           4702, # unreachable code
           4715, # not all control paths return a value
           4819, # The file contains a character that cannot be represented in the current code page
+          4275, # non dll-interface class used as base for dll-interface class
         ],
       }],
     ],  # conditions

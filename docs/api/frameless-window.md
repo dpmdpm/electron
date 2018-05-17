@@ -84,12 +84,12 @@ win.show()
   the user's system).
 * On Windows operating systems, transparent windows will not work when DWM is
   disabled.
-* On Linux users have to put `--enable-transparent-visuals --disable-gpu` in
+* On Linux, users have to put `--enable-transparent-visuals --disable-gpu` in
   the command line to disable GPU and allow ARGB to make transparent window,
   this is caused by an upstream bug that [alpha channel doesn't work on some
   NVidia drivers](https://code.google.com/p/chromium/issues/detail?id=369209) on
   Linux.
-* On Mac the native window shadow will not be shown on a transparent window.
+* On Mac, the native window shadow will not be shown on a transparent window.
 
 ## Click-through window
 
@@ -102,6 +102,27 @@ const {BrowserWindow} = require('electron')
 let win = new BrowserWindow()
 win.setIgnoreMouseEvents(true)
 ```
+
+### Forwarding
+
+Ignoring mouse messages makes the web page oblivious to mouse movement, meaning
+that mouse movement events will not be emitted. On Windows operating systems an
+optional parameter can be used to forward mouse move messages to the web page,
+allowing events such as `mouseleave` to be emitted:
+
+```javascript
+let win = require('electron').remote.getCurrentWindow()
+let el = document.getElementById('clickThroughElement')
+el.addEventListener('mouseenter', () => {
+  win.setIgnoreMouseEvents(true, {forward: true})
+})
+el.addEventListener('mouseleave', () => {
+  win.setIgnoreMouseEvents(false)
+})
+```
+
+This makes the web page click-through when over `el`, and returns to normal
+outside it.
 
 ## Draggable region
 
@@ -131,7 +152,7 @@ button {
 }
 ```
 
-If you're setting just a custom titlebar as draggable, you also need to make all
+If you're only setting a custom titlebar as draggable, you also need to make all
 buttons in titlebar non-draggable.
 
 ## Text selection
@@ -155,4 +176,4 @@ when you right click on it a system menu will pop up. To make the context menu
 behave correctly on all platforms you should never use a custom context menu on
 draggable areas.
 
-[ignore-mouse-events]: browser-window.md#winsetignoremouseeventsignore
+[ignore-mouse-events]: browser-window.md#winsetignoremouseeventsignore-options

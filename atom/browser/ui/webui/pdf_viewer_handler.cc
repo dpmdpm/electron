@@ -6,8 +6,8 @@
 
 #include "atom/common/atom_constants.h"
 #include "base/bind.h"
-#include "base/memory/ptr_util.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
 #include "content/public/browser/stream_handle.h"
 #include "content/public/browser/stream_info.h"
 #include "content/public/browser/web_contents.h"
@@ -44,7 +44,7 @@ void CreateResponseHeadersDictionary(const net::HttpResponseHeaders* headers,
 void PopulateStreamInfo(base::DictionaryValue* stream_info,
                         content::StreamInfo* stream,
                         const std::string& original_url) {
-  auto headers_dict = base::MakeUnique<base::DictionaryValue>();
+  auto headers_dict = std::make_unique<base::DictionaryValue>();
   auto stream_url = stream->handle->GetURL().spec();
   CreateResponseHeadersDictionary(stream->response_headers.get(),
                                   headers_dict.get());
@@ -58,12 +58,14 @@ void PopulateStreamInfo(base::DictionaryValue* stream_info,
 PdfViewerHandler::PdfViewerHandler(const std::string& src)
     : stream_(nullptr), original_url_(src) {}
 
-PdfViewerHandler::~PdfViewerHandler() {}
+PdfViewerHandler::~PdfViewerHandler() {
+  RemoveObserver();
+}
 
 void PdfViewerHandler::SetPdfResourceStream(content::StreamInfo* stream) {
   stream_ = stream;
   if (!!initialize_callback_id_.get()) {
-    auto list = base::MakeUnique<base::ListValue>();
+    auto list = std::make_unique<base::ListValue>();
     list->Set(0, std::move(initialize_callback_id_));
     Initialize(list.get());
   }
@@ -90,15 +92,11 @@ void PdfViewerHandler::RegisterMessages() {
 }
 
 void PdfViewerHandler::OnJavascriptAllowed() {
-  auto zoom_controller = WebContentsZoomController::FromWebContents(
-    web_ui()->GetWebContents());
-  zoom_controller->AddObserver(this);
+  AddObserver();
 }
 
 void PdfViewerHandler::OnJavascriptDisallowed() {
-  auto zoom_controller = WebContentsZoomController::FromWebContents(
-    web_ui()->GetWebContents());
-  zoom_controller->RemoveObserver(this);
+  RemoveObserver();
 }
 
 void PdfViewerHandler::Initialize(const base::ListValue* args) {
@@ -110,15 +108,15 @@ void PdfViewerHandler::Initialize(const base::ListValue* args) {
     CHECK(!initialize_callback_id_.get());
     AllowJavascript();
 
-    auto stream_info = base::MakeUnique<base::DictionaryValue>();
+    auto stream_info = std::make_unique<base::DictionaryValue>();
     PopulateStreamInfo(stream_info.get(), stream_, original_url_);
     ResolveJavascriptCallback(*callback_id, *stream_info);
   } else {
     initialize_callback_id_ = callback_id->CreateDeepCopy();
   }
 
-  auto zoom_controller = WebContentsZoomController::FromWebContents(
-    web_ui()->GetWebContents());
+  auto zoom_controller =
+      WebContentsZoomController::FromWebContents(web_ui()->GetWebContents());
   zoom_controller->SetZoomMode(WebContentsZoomController::ZOOM_MODE_MANUAL);
   zoom_controller->SetZoomLevel(0);
 }
@@ -130,12 +128,11 @@ void PdfViewerHandler::GetDefaultZoom(const base::ListValue* args) {
   const base::Value* callback_id;
   CHECK(args->Get(0, &callback_id));
 
-  auto zoom_controller = WebContentsZoomController::FromWebContents(
-    web_ui()->GetWebContents());
+  auto zoom_controller =
+      WebContentsZoomController::FromWebContents(web_ui()->GetWebContents());
   double zoom_level = zoom_controller->GetDefaultZoomLevel();
   ResolveJavascriptCallback(
-      *callback_id,
-      base::Value(content::ZoomLevelToZoomFactor(zoom_level)));
+      *callback_id, base::Value(content::ZoomLevelToZoomFactor(zoom_level)));
 }
 
 void PdfViewerHandler::GetInitialZoom(const base::ListValue* args) {
@@ -145,12 +142,11 @@ void PdfViewerHandler::GetInitialZoom(const base::ListValue* args) {
   const base::Value* callback_id;
   CHECK(args->Get(0, &callback_id));
 
-  auto zoom_controller = WebContentsZoomController::FromWebContents(
-    web_ui()->GetWebContents());
+  auto zoom_controller =
+      WebContentsZoomController::FromWebContents(web_ui()->GetWebContents());
   double zoom_level = zoom_controller->GetZoomLevel();
   ResolveJavascriptCallback(
-      *callback_id,
-      base::Value(content::ZoomLevelToZoomFactor(zoom_level)));
+      *callback_id, base::Value(content::ZoomLevelToZoomFactor(zoom_level)));
 }
 
 void PdfViewerHandler::SetZoom(const base::ListValue* args) {
@@ -162,8 +158,8 @@ void PdfViewerHandler::SetZoom(const base::ListValue* args) {
   double zoom_level = 0.0;
   CHECK(args->GetDouble(1, &zoom_level));
 
-  auto zoom_controller = WebContentsZoomController::FromWebContents(
-    web_ui()->GetWebContents());
+  auto zoom_controller =
+      WebContentsZoomController::FromWebContents(web_ui()->GetWebContents());
   zoom_controller->SetZoomLevel(zoom_level);
   ResolveJavascriptCallback(*callback_id, base::Value(zoom_level));
 }
@@ -175,7 +171,7 @@ void PdfViewerHandler::GetStrings(const base::ListValue* args) {
   const base::Value* callback_id;
   CHECK(args->Get(0, &callback_id));
 
-  auto result = base::MakeUnique<base::DictionaryValue>();
+  auto result = std::make_unique<base::DictionaryValue>();
 // TODO(deepak1556): Generate strings from components/pdf_strings.grdp.
 #define SET_STRING(id, resource) result->SetString(id, resource)
   SET_STRING("passwordPrompt",
@@ -195,7 +191,7 @@ void PdfViewerHandler::GetStrings(const base::ListValue* args) {
   SET_STRING("tooltipZoomOut", "Zoom out");
 #undef SET_STRING
 
-  webui::SetLoadTimeDataDefaults(l10n_util::GetApplicationLocale(""),
+  webui::SetLoadTimeDataDefaults(g_browser_process->GetApplicationLocale(),
                                  result.get());
   ResolveJavascriptCallback(*callback_id, *result);
 }
@@ -206,12 +202,25 @@ void PdfViewerHandler::Reload(const base::ListValue* args) {
 }
 
 void PdfViewerHandler::OnZoomLevelChanged(content::WebContents* web_contents,
-    double level, bool is_temporary) {
+                                          double level,
+                                          bool is_temporary) {
   if (web_ui()->GetWebContents() == web_contents) {
     CallJavascriptFunction("cr.webUIListenerCallback",
-      base::Value("onZoomLevelChanged"),
-      base::Value(content::ZoomLevelToZoomFactor(level)));
+                           base::Value("onZoomLevelChanged"),
+                           base::Value(content::ZoomLevelToZoomFactor(level)));
   }
+}
+
+void PdfViewerHandler::AddObserver() {
+  auto zoom_controller =
+      WebContentsZoomController::FromWebContents(web_ui()->GetWebContents());
+  zoom_controller->AddObserver(this);
+}
+
+void PdfViewerHandler::RemoveObserver() {
+  auto zoom_controller =
+      WebContentsZoomController::FromWebContents(web_ui()->GetWebContents());
+  zoom_controller->RemoveObserver(this);
 }
 
 }  // namespace atom

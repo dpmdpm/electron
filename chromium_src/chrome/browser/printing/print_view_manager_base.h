@@ -5,14 +5,16 @@
 #ifndef CHROME_BROWSER_PRINTING_PRINT_VIEW_MANAGER_BASE_H_
 #define CHROME_BROWSER_PRINTING_PRINT_VIEW_MANAGER_BASE_H_
 
+#include <memory>
+
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "components/prefs/pref_member.h"
 #include "base/strings/string16.h"
+#include "components/prefs/pref_member.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
-#include "printing/printed_pages_source.h"
 
 struct PrintHostMsg_DidPrintPage_Params;
 
@@ -30,22 +32,24 @@ class PrintQueriesQueue;
 
 // Base class for managing the print commands for a WebContents.
 class PrintViewManagerBase : public content::NotificationObserver,
-                             public PrintedPagesSource,
                              public content::WebContentsObserver {
  public:
-  virtual ~PrintViewManagerBase();
+  ~PrintViewManagerBase() override;
 
 #if !defined(DISABLE_BASIC_PRINTING)
   // Prints the current document immediately. Since the rendering is
   // asynchronous, the actual printing will not be completed on the return of
   // this function. Returns false if printing is impossible at the moment.
   virtual bool PrintNow(content::RenderFrameHost* rfh,
-                        bool silent, bool print_background,
+                        bool silent,
+                        bool print_background,
                         const base::string16& device_name);
 #endif  // !DISABLE_BASIC_PRINTING
 
   // PrintedPagesSource implementation.
-  virtual base::string16 RenderSourceName() override;
+  base::string16 RenderSourceName();
+
+  void SetCallback(const base::Callback<void(bool)>& cb) { callback = cb; };
 
  protected:
   explicit PrintViewManagerBase(content::WebContents* web_contents);
@@ -66,12 +70,12 @@ class PrintViewManagerBase : public content::NotificationObserver,
 
  private:
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) override;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Cancels the print job.
-  virtual void NavigationStopped() override;
+  void NavigationStopped() override;
 
   // IPC Message handlers.
   void OnDidGetPrintedPagesCount(int cookie, int number_pages);
@@ -158,6 +162,8 @@ class PrintViewManagerBase : public content::NotificationObserver,
   bool printing_enabled_;
 
   scoped_refptr<printing::PrintQueriesQueue> queue_;
+
+  base::Callback<void(bool)> callback;
 
   DISALLOW_COPY_AND_ASSIGN(PrintViewManagerBase);
 };

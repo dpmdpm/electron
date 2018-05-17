@@ -4,6 +4,9 @@ const {closeWindow} = require('./window-helpers')
 const {remote, webFrame} = require('electron')
 const {BrowserWindow, protocol, ipcMain} = remote
 
+/* Most of the APIs here don't use standard callbacks */
+/* eslint-disable standard/no-callback-literal */
+
 describe('webFrame module', function () {
   var fixtures = path.resolve(__dirname, 'fixtures')
   var w = null
@@ -14,7 +17,6 @@ describe('webFrame module', function () {
 
   describe('webFrame.registerURLSchemeAsPrivileged', function () {
     it('supports fetch api by default', function (done) {
-      webFrame.registerURLSchemeAsPrivileged('file')
       var url = 'file://' + fixtures + '/assets/logo.png'
       window.fetch(url).then(function (response) {
         assert(response.ok)
@@ -132,7 +134,6 @@ describe('webFrame module', function () {
 
   it('supports setting the visual and layout zoom level limits', function () {
     assert.doesNotThrow(function () {
-      webFrame.setZoomLevelLimits(1, 100)
       webFrame.setVisualZoomLevelLimits(1, 50)
       webFrame.setLayoutZoomLevelLimits(0, 25)
     })

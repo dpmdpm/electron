@@ -11,30 +11,37 @@
 #include "content/public/browser/render_frame_host.h"
 #include "ui/gfx/font_list.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
 namespace atom {
 
 class AutofillPopupView;
 
-class AutofillPopup {
+class AutofillPopup : public views::ViewObserver {
  public:
-  explicit AutofillPopup(gfx::NativeView);
-  ~AutofillPopup();
+  AutofillPopup();
+  ~AutofillPopup() override;
 
   void CreateView(content::RenderFrameHost* render_frame,
-    bool offscreen, views::Widget* widget, const gfx::RectF& bounds);
+                  bool offscreen,
+                  views::View* parent,
+                  const gfx::RectF& bounds);
   void Hide();
 
   void SetItems(const std::vector<base::string16>& values,
                 const std::vector<base::string16>& labels);
+  void UpdatePopupBounds();
 
  private:
   friend class AutofillPopupView;
 
+  // views::ViewObserver:
+  void OnViewBoundsChanged(views::View* view) override;
+  void OnViewIsDeleting(views::View* view) override;
+
   void AcceptSuggestion(int index);
 
-  void UpdatePopupBounds();
   int GetDesiredPopupHeight();
   int GetDesiredPopupWidth();
   gfx::Rect GetRowBounds(int i);
@@ -46,9 +53,6 @@ class AutofillPopup {
   base::string16 GetValueAt(int i);
   base::string16 GetLabelAt(int i);
   int LineFromY(int y) const;
-
-  // The native view that contains this
-  gfx::NativeView container_view_;
 
   int selected_index_;
 
@@ -69,10 +73,13 @@ class AutofillPopup {
 
   // For sending the accepted suggestion to the render frame that
   // asked to open the popup
-  content::RenderFrameHost* frame_host_;
+  content::RenderFrameHost* frame_host_ = nullptr;
 
   // The popup view. The lifetime is managed by the owning Widget
-  AutofillPopupView* view_;
+  AutofillPopupView* view_ = nullptr;
+
+  // The parent view that the popup view shows on. Weak ref.
+  views::View* parent_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillPopup);
 };

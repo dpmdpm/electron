@@ -80,7 +80,7 @@ file's name.
 
 The structure of a renamed app would be like:
 
-```
+```text
 MyApp.app/Contents
 ├── Info.plist
 ├── MacOS/
@@ -140,7 +140,7 @@ we appreciate your help.
 
 2. Create a new S3 bucket and create the following empty directory structure:
 
-    ```
+    ```sh
     - atom-shell/
       - symbols/
       - dist/
@@ -152,12 +152,12 @@ we appreciate your help.
   * `ELECTRON_S3_ACCESS_KEY`, `ELECTRON_S3_BUCKET`, `ELECTRON_S3_SECRET_KEY` -
     the place where you'll upload node.js headers as well as symbols
   * `ELECTRON_RELEASE` - Set to `true` and the upload part will run, leave unset
-    and `surf-build` will just do CI-type checks, appropriate to run for every
+    and `surf-build` will do CI-type checks, appropriate to run for every
     pull request.
   * `CI` - Set to `true` or else it will fail
   * `GITHUB_TOKEN` - set it to the same as `ELECTRON_GITHUB_TOKEN`
   * `SURF_TEMP` - set to `C:\Temp` on Windows to prevent path too long issues
-  * `TARGET_ARCH` - set to `ia32` or `x64`  
+  * `TARGET_ARCH` - set to `ia32` or `x64`
 
 4. In `script/upload.py`, you _must_ set `ELECTRON_REPO` to your fork (`MYORG/electron`),
   especially if you are a contributor to Electron proper.

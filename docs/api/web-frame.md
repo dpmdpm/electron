@@ -4,6 +4,10 @@
 
 Process: [Renderer](../glossary.md#renderer-process)
 
+`webFrame` export of the electron module is an instance of the `WebFrame`
+class representing the top frame of the current `BrowserWindow`. Sub-frames can
+be retrieved by certain properties and methods (e.g. `webFrame.firstChild`).
+
 An example of zooming current page to 200%.
 
 ```javascript
@@ -14,7 +18,7 @@ webFrame.setZoomFactor(2)
 
 ## Methods
 
-The `webFrame` module has the following methods:
+The `WebFrame` class has the following instance methods:
 
 ### `webFrame.setZoomFactor(factor)`
 
@@ -29,7 +33,7 @@ Returns `Number` - The current zoom factor.
 
 ### `webFrame.setZoomLevel(level)`
 
-* `level` Number - Zoom level
+* `level` Number - Zoom level.
 
 Changes the zoom level to the specified level. The original size is 0 and each
 increment above or below represents zooming 20% larger or smaller to default
@@ -38,14 +42,6 @@ limits of 300% and 50% of original size, respectively.
 ### `webFrame.getZoomLevel()`
 
 Returns `Number` - The current zoom level.
-
-### `webFrame.setZoomLevelLimits(minimumLevel, maximumLevel)`
-
-* `minimumLevel` Number
-* `maximumLevel` Number
-
-**Deprecated:** Call `setVisualZoomLevelLimits` instead to set the visual zoom
-level limits. This method will be removed in Electron 2.0.
 
 ### `webFrame.setVisualZoomLevelLimits(minimumLevel, maximumLevel)`
 
@@ -66,7 +62,7 @@ Sets the maximum and minimum layout-based (i.e. non-visual) zoom level.
 * `language` String
 * `autoCorrectWord` Boolean
 * `provider` Object
-  * `spellCheck` Function - Returns `Boolean`
+  * `spellCheck` Function - Returns `Boolean`.
     * `text` String
 
 Sets a provider for spell checking in input fields and text areas.
@@ -106,11 +102,11 @@ Content Security Policy.
 
 * `scheme` String
 * `options` Object (optional)
-  * `secure` Boolean - (optional) Default true.
-  * `bypassCSP` Boolean - (optional) Default true.
-  * `allowServiceWorkers` Boolean - (optional) Default true.
-  * `supportFetchAPI` Boolean - (optional) Default true.
-  * `corsEnabled` Boolean - (optional) Default true.
+  * `secure` Boolean (optional) - Default true.
+  * `bypassCSP` Boolean (optional) - Default true.
+  * `allowServiceWorkers` Boolean (optional) - Default true.
+  * `supportFetchAPI` Boolean (optional) - Default true.
+  * `corsEnabled` Boolean (optional) - Default true.
 
 Registers the `scheme` as secure, bypasses content security policy for resources,
 allows registering ServiceWorker and supports fetch API.
@@ -144,6 +140,37 @@ Evaluates `code` in page.
 In the browser window some HTML APIs like `requestFullScreen` can only be
 invoked by a gesture from the user. Setting `userGesture` to `true` will remove
 this limitation.
+
+### `webFrame.executeJavaScriptInIsolatedWorld(worldId, scripts[, userGesture, callback])`
+
+* `worldId` Integer
+* `scripts` [WebSource[]](structures/web-source.md)
+* `userGesture` Boolean (optional) - Default is `false`.
+* `callback` Function (optional) - Called after script has been executed.
+  * `result` Any
+
+Work like `executeJavaScript` but evaluates `scripts` in isolated context.
+
+### `webFrame.setIsolatedWorldContentSecurityPolicy(worldId, csp)`
+
+* `worldId` Integer
+* `csp` String
+
+Set the content security policy of the isolated world.
+
+### `webFrame.setIsolatedWorldHumanReadableName(worldId, name)`
+
+* `worldId` Integer
+* `name` String
+
+Set the name of the isolated world. Useful in devtools.
+
+### `webFrame.setIsolatedWorldSecurityOrigin(worldId, securityOrigin)`
+
+* `worldId` Integer
+* `securityOrigin` String
+
+Set the security origin of the isolated world.
 
 ### `webFrame.getResourceUsage()`
 
@@ -191,3 +218,64 @@ memory (i.e. you have navigated from a super heavy page to a mostly empty one,
 and intend to stay there).
 
 [spellchecker]: https://github.com/atom/node-spellchecker
+
+### `webFrame.getFrameForSelector(selector)`
+
+* `selector` String - CSS selector for a frame element.
+
+Returns `WebFrame` - The frame element in `webFrame's` document selected by
+`selector`, `null` would be returned if `selector` does not select a frame or
+if the frame is not in the current renderer process.
+
+### `webFrame.findFrameByName(name)`
+
+* `name` String
+
+Returns `WebFrame` - A child of `webFrame` with the supplied `name`, `null`
+would be returned if there's no such frame or if the frame is not in the current
+renderer process.
+
+### `webFrame.findFrameByRoutingId(routingId)`
+
+* `routingId` Integer - An `Integer` representing the unique frame id in the
+   current renderer process. Routing IDs can be retrieved from `WebFrame`
+   instances (`webFrame.routingId`) and are also passed by frame
+   specific `WebContents` navigation events (e.g. `did-frame-navigate`)
+  
+Returns `WebFrame` - that has the supplied `routingId`, `null` if not found. 
+
+## Properties
+
+### `webFrame.top`
+
+A `WebFrame` representing top frame in frame hierarchy to which `webFrame`
+belongs, the property would be `null` if top frame is not in the current
+renderer process.
+
+### `webFrame.opener`
+
+A `WebFrame` representing the frame which opened `webFrame`, the property would
+be `null` if there's no opener or opener is not in the current renderer process.
+
+### `webFrame.parent`
+
+A `WebFrame` representing parent frame of `webFrame`, the property would be
+`null` if `webFrame` is top or parent is not in the current renderer process.
+
+### `webFrame.firstChild`
+
+A `WebFrame` representing the first child frame of `webFrame`, the property
+would be `null` if `webFrame` has no children or if first child is not in the
+current renderer process.
+
+### `webFrame.nextSibling`
+
+A `WebFrame` representing next sibling frame, the property would be `null` if
+`webFrame` is the last frame in its parent or if the next sibling is not in the
+current renderer process.
+
+### `webFrame.routingId`
+
+An `Integer` representing the unique frame id in the current renderer process.
+Distinct WebFrame instances that refer to the same underlying frame will have
+the same `routingId`.

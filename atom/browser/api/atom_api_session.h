@@ -6,6 +6,7 @@
 #define ATOM_BROWSER_API_ATOM_API_SESSION_H_
 
 #include <string>
+#include <vector>
 
 #include "atom/browser/api/trackable_object.h"
 #include "atom/browser/atom_blob_reader.h"
@@ -23,7 +24,7 @@ class FilePath;
 namespace mate {
 class Arguments;
 class Dictionary;
-}
+}  // namespace mate
 
 namespace net {
 class ProxyConfig;
@@ -35,8 +36,8 @@ class AtomBrowserContext;
 
 namespace api {
 
-class Session: public mate::TrackableObject<Session>,
-               public content::DownloadManager::Observer {
+class Session : public mate::TrackableObject<Session>,
+                public content::DownloadManager::Observer {
  public:
   using ResolveProxyCallback = base::Callback<void(std::string)>;
 
@@ -46,12 +47,13 @@ class Session: public mate::TrackableObject<Session>,
   };
 
   // Gets or creates Session from the |browser_context|.
-  static mate::Handle<Session> CreateFrom(
-      v8::Isolate* isolate, AtomBrowserContext* browser_context);
+  static mate::Handle<Session> CreateFrom(v8::Isolate* isolate,
+                                          AtomBrowserContext* browser_context);
 
   // Gets the Session of |partition|.
   static mate::Handle<Session> FromPartition(
-      v8::Isolate* isolate, const std::string& partition,
+      v8::Isolate* isolate,
+      const std::string& partition,
       const base::DictionaryValue& options = base::DictionaryValue());
 
   AtomBrowserContext* browser_context() const { return browser_context_.get(); }
@@ -62,7 +64,7 @@ class Session: public mate::TrackableObject<Session>,
 
   // Methods.
   void ResolveProxy(const GURL& url, ResolveProxyCallback callback);
-  template<CacheAction action>
+  template <CacheAction action>
   void DoCacheAction(const net::CompletionCallback& callback);
   void ClearStorageData(mate::Arguments* args);
   void FlushStorageData();
@@ -81,13 +83,15 @@ class Session: public mate::TrackableObject<Session>,
   void GetBlobData(const std::string& uuid,
                    const AtomBlobReader::CompletionCallback& callback);
   void CreateInterruptedDownload(const mate::Dictionary& options);
+  void SetPreloads(const std::vector<base::FilePath::StringType>& preloads);
+  std::vector<base::FilePath::StringType> GetPreloads() const;
   v8::Local<v8::Value> Cookies(v8::Isolate* isolate);
   v8::Local<v8::Value> Protocol(v8::Isolate* isolate);
   v8::Local<v8::Value> WebRequest(v8::Isolate* isolate);
 
  protected:
   Session(v8::Isolate* isolate, AtomBrowserContext* browser_context);
-  ~Session();
+  ~Session() override;
 
   // content::DownloadManager::Observer:
   void OnDownloadCreated(content::DownloadManager* manager,

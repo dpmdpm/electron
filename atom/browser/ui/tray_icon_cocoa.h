@@ -17,17 +17,18 @@
 
 namespace atom {
 
-class TrayIconCocoa : public TrayIcon,
-                      public AtomMenuModel::Observer {
+class TrayIconCocoa : public TrayIcon, public AtomMenuModel::Observer {
  public:
   TrayIconCocoa();
-  virtual ~TrayIconCocoa();
+  ~TrayIconCocoa() override;
 
   void SetImage(const gfx::Image& image) override;
   void SetPressedImage(const gfx::Image& image) override;
   void SetToolTip(const std::string& tool_tip) override;
   void SetTitle(const std::string& title) override;
   void SetHighlightMode(TrayIcon::HighlightMode mode) override;
+  void SetIgnoreDoubleClickEvents(bool ignore) override;
+  bool GetIgnoreDoubleClickEvents() override;
   void PopUpContextMenu(const gfx::Point& pos,
                         AtomMenuModel* menu_model) override;
   void SetContextMenu(AtomMenuModel* menu_model) override;
@@ -35,7 +36,7 @@ class TrayIconCocoa : public TrayIcon,
 
  protected:
   // AtomMenuModel::Observer:
-  void MenuWillClose() override;
+  void OnMenuWillClose() override;
 
  private:
   // Atom custom view for NSStatusItem.

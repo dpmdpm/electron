@@ -7,17 +7,17 @@ import re
 import subprocess
 import sys
 
-from lib.config import BASE_URL, PLATFORM,  enable_verbose_mode, \
+from lib.config import BASE_URL, PLATFORM, MIPS64EL_SYSROOT_URL, \
+                       MIPS64EL_GCC, MIPS64EL_GCC_URL, enable_verbose_mode, \
                        is_verbose_mode, get_target_arch
 from lib.util import execute, execute_stdout, get_electron_version, \
-                     scoped_cwd, update_node_modules
-
+                     scoped_cwd, download, update_node_modules
+from tls import check_tls
 
 SOURCE_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 VENDOR_DIR = os.path.join(SOURCE_ROOT, 'vendor')
 DOWNLOAD_DIR = os.path.join(VENDOR_DIR, 'download')
 PYTHON_26_URL = 'https://chromium.googlesource.com/chromium/deps/python_26'
-
 
 def main():
   os.chdir(SOURCE_ROOT)
@@ -31,15 +31,23 @@ def main():
   if sys.platform == 'cygwin':
     update_win32_python()
 
+  check_tls(args.verbose)
+
   update_submodules()
 
   libcc_source_path = args.libcc_source_path
   libcc_shared_library_path = args.libcc_shared_library_path
   libcc_static_library_path = args.libcc_static_library_path
 
+  if args.target_arch == 'mips64el':
+    download_mips64el_toolchain()
+
+  if args.target_arch.startswith('arm'):
+    download_native_mksnapshot(args.target_arch)
+
   # Redirect to use local libchromiumcontent build.
   if args.build_release_libcc or args.build_debug_libcc:
-    build_libchromiumcontent(args.verbose, args.target_arch, defines,
+    build_libchromiumcontent(args.verbose, args.target_arch,
                              args.build_debug_libcc, args.update_libcc)
     dist_dir = os.path.join(VENDOR_DIR, 'libchromiumcontent', 'dist', 'main')
     libcc_source_path = os.path.join(dist_dir, 'src')
@@ -57,7 +65,7 @@ def main():
                            libcc_source_path, libcc_shared_library_path,
                            libcc_static_library_path)
 
-  if PLATFORM == 'linux':
+  if PLATFORM == 'linux' and args.target_arch != 'mips64el':
     download_sysroot(args.target_arch)
 
   create_chrome_version_h()
@@ -107,6 +115,8 @@ def parse_args():
                       help='The static library path of libchromiumcontent.')
   parser.add_argument('--defines', default='',
                       help='The build variables passed to gyp')
+  parser.add_argument('--cc_wrapper',
+                      help='Sets cc_wrapper for build. E.g. $(which sccache)')
   return parser.parse_args()
 
 
@@ -117,6 +127,8 @@ def args_to_defines(args):
   if args.clang_dir:
     defines += ' make_clang_dir=' + args.clang_dir
     defines += ' clang_use_chrome_plugins=0'
+  if args.cc_wrapper is not None:
+    defines += ' cc_wrapper=' + args.cc_wrapper
   return defines
 
 
@@ -144,8 +156,8 @@ def setup_libchromiumcontent(is_dev, target_arch, url,
                              libcc_shared_library_path,
                              libcc_static_library_path):
   target_dir = os.path.join(DOWNLOAD_DIR, 'libchromiumcontent')
-  download = os.path.join(VENDOR_DIR, 'libchromiumcontent', 'script',
-                          'download')
+  script = os.path.join(VENDOR_DIR, 'libchromiumcontent', 'script',
+                        'download')
   args = ['-f', '-c', get_libchromiumcontent_commit(), '--target_arch',
           target_arch, url, target_dir]
   if (libcc_source_path != None and
@@ -158,9 +170,9 @@ def setup_libchromiumcontent(is_dev, target_arch, url,
   else:
     mkdir_p(DOWNLOAD_DIR)
   if is_dev:
-    subprocess.check_call([sys.executable, download] + args)
+    subprocess.check_call([sys.executable, script] + args)
   else:
-    subprocess.check_call([sys.executable, download, '-s'] + args)
+    subprocess.check_call([sys.executable, script, '-s'] + args)
 
 
 def update_win32_python():
@@ -169,7 +181,7 @@ def update_win32_python():
       execute_stdout(['git', 'clone', PYTHON_26_URL])
 
 
-def build_libchromiumcontent(verbose, target_arch, defines, debug,
+def build_libchromiumcontent(verbose, target_arch, debug,
                              force_update):
   args = [sys.executable,
           os.path.join(SOURCE_ROOT, 'script', 'build-libchromiumcontent.py')]
@@ -179,8 +191,6 @@ def build_libchromiumcontent(verbose, target_arch, defines, debug,
     args += ['--force-update']
   if verbose:
     args += ['-v']
-  if defines:
-    args += ['--defines', defines]
   execute_stdout(args + ['--target_arch', target_arch])
 
 
@@ -197,6 +207,33 @@ def download_sysroot(target_arch):
                   os.path.join(SOURCE_ROOT, 'script', 'install-sysroot.py'),
                   '--arch', target_arch],
                   cwd=VENDOR_DIR)
+
+
+def download_mips64el_toolchain():
+  # Download sysroot image.
+  if not os.path.exists(os.path.join(VENDOR_DIR,
+                                     'debian_jessie_mips64-sysroot')):
+    tar_name = 'debian_jessie_mips64-sysroot.tar.bz2'
+    download(tar_name, MIPS64EL_SYSROOT_URL,
+             os.path.join(SOURCE_ROOT, tar_name))
+    subprocess.call(['tar', '-jxf', tar_name, '-C', VENDOR_DIR])
+    os.remove(tar_name)
+  # Download toolchain.
+  if not os.path.exists(os.path.join(VENDOR_DIR, MIPS64EL_GCC)):
+    tar_name = MIPS64EL_GCC + '.tar.gz'
+    download(tar_name, MIPS64EL_GCC_URL, os.path.join(SOURCE_ROOT, tar_name))
+    subprocess.check_call(['tar', '-xf', tar_name, '-C', VENDOR_DIR])
+    os.remove(tar_name)
+
+def download_native_mksnapshot(arch):
+  if not os.path.exists(os.path.join(VENDOR_DIR,
+                                     'native_mksnapshot')):
+    tar_name = 'native-mksnapshot.tar.bz2'
+    url = '{0}/linux/{1}/{2}/{3}'.format(BASE_URL, arch,
+           get_libchromiumcontent_commit(), tar_name)
+    download(tar_name, url, os.path.join(SOURCE_ROOT, tar_name))
+    subprocess.call(['tar', '-jxf', tar_name, '-C', VENDOR_DIR])
+    os.remove(tar_name)
 
 def create_chrome_version_h():
   version_file = os.path.join(VENDOR_DIR, 'libchromiumcontent', 'VERSION')

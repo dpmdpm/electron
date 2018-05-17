@@ -18,10 +18,7 @@
 
 namespace atom {
 
-NotifyIcon::NotifyIcon(NotifyIconHost* host,
-                       UINT id,
-                       HWND window,
-                       UINT message)
+NotifyIcon::NotifyIcon(NotifyIconHost* host, UINT id, HWND window, UINT message)
     : host_(host),
       icon_id_(id),
       window_(window),
@@ -55,7 +52,9 @@ void NotifyIcon::HandleClickEvent(int modifiers,
     if (double_button_click)  // double left click
       NotifyDoubleClicked(bounds, modifiers);
     else  // single left click
-      NotifyClicked(bounds, modifiers);
+      NotifyClicked(bounds,
+                    display::Screen::GetScreen()->GetCursorScreenPoint(),
+                    modifiers);
     return;
   } else if (!double_button_click) {  // single right click
     if (menu_model_)
@@ -150,8 +149,8 @@ void NotifyIcon::PopUpContextMenu(const gfx::Point& pos,
   menu_runner_.reset(new views::MenuRunner(
       menu_model != nullptr ? menu_model : menu_model_,
       views::MenuRunner::CONTEXT_MENU | views::MenuRunner::HAS_MNEMONICS));
-  ignore_result(menu_runner_->RunMenuAt(
-      NULL, NULL, rect, views::MENU_ANCHOR_TOPLEFT, ui::MENU_SOURCE_MOUSE));
+  menu_runner_->RunMenuAt(NULL, NULL, rect, views::MENU_ANCHOR_TOPLEFT,
+                          ui::MENU_SOURCE_MOUSE);
 }
 
 void NotifyIcon::SetContextMenu(AtomMenuModel* menu_model) {
@@ -165,7 +164,7 @@ gfx::Rect NotifyIcon::GetBounds() {
   icon_id.hWnd = window_;
   icon_id.cbSize = sizeof(NOTIFYICONIDENTIFIER);
 
-  RECT rect = { 0 };
+  RECT rect = {0};
   Shell_NotifyIconGetRect(&icon_id, &rect);
   return display::win::ScreenWin::ScreenToDIPRect(window_, gfx::Rect(rect));
 }

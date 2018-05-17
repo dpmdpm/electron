@@ -22,8 +22,8 @@ class WebContents;
 // meaningful. This is because the normal size of the guestview is overridden
 // whenever autosizing occurs.
 struct SetSizeParams {
-  SetSizeParams() {}
-  ~SetSizeParams() {}
+  SetSizeParams();
+  ~SetSizeParams();
 
   std::unique_ptr<bool> enable_auto_size;
   std::unique_ptr<gfx::Size> min_size;
@@ -69,7 +69,7 @@ class WebViewGuestDelegate : public content::BrowserPluginGuestDelegate,
   content::RenderWidgetHost* GetOwnerRenderWidgetHost() override;
   content::SiteInstance* GetOwnerSiteInstance() override;
   content::WebContents* CreateNewGuestWindow(
-     const content::WebContents::CreateParams& create_params) override;
+      const content::WebContents::CreateParams& create_params) override;
 
   // WebContentsZoomController::Observer:
   void OnZoomLevelChanged(content::WebContents* web_contents,
@@ -88,8 +88,10 @@ class WebViewGuestDelegate : public content::BrowserPluginGuestDelegate,
   // Returns the default size of the guestview.
   gfx::Size GetDefaultSize() const;
 
+  void ResetZoomController();
+
   // The WebContents that attaches this guest view.
-  content::WebContents* embedder_web_contents_;
+  content::WebContents* embedder_web_contents_ = nullptr;
 
   // The zoom controller of the embedder that is used
   // to subscribe for zoom changes.

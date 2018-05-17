@@ -27,8 +27,8 @@ bool SubprocessNeedsResourceBundle(const std::string& process_type) {
       process_type == switches::kZygoteProcess ||
 #endif
 #if defined(OS_MACOSX)
-      // Mac needs them too for scrollbar related images and for sandbox
-      // profiles.
+  // Mac needs them too for scrollbar related images and for sandbox
+  // profiles.
 #if !defined(DISABLE_NACL)
       process_type == switches::kNaClLoaderProcess ||
 #endif
@@ -42,24 +42,31 @@ bool SubprocessNeedsResourceBundle(const std::string& process_type) {
 
 }  // namespace
 
-void InitializeResourceBundle(const std::string& locale) {
-  // Load locales.
+void LoadResourceBundle(const std::string& locale) {
+  const bool initialized = ui::ResourceBundle::HasSharedInstance();
+  if (initialized)
+    ui::ResourceBundle::CleanupSharedInstance();
+
   ui::ResourceBundle::InitSharedInstanceWithLocale(
       locale, nullptr, ui::ResourceBundle::DO_NOT_LOAD_COMMON_RESOURCES);
 
-  // Load other resource files.
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+  bundle.ReloadLocaleResources(locale);
+
+// Load other resource files.
 #if defined(OS_MACOSX)
   LoadCommonResources();
 #else
   base::FilePath pak_dir;
-  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   PathService::Get(base::DIR_MODULE, &pak_dir);
   bundle.AddDataPackFromPath(
       pak_dir.Append(FILE_PATH_LITERAL("content_shell.pak")),
       ui::GetSupportedScaleFactors()[0]);
+#if defined(ENABLE_PDF_VIEWER)
   bundle.AddDataPackFromPath(
       pak_dir.Append(FILE_PATH_LITERAL("pdf_viewer_resources.pak")),
       ui::GetSupportedScaleFactors()[0]);
+#endif  // defined(ENABLE_PDF_VIEWER)
   bundle.AddDataPackFromPath(pak_dir.Append(FILE_PATH_LITERAL(
                                  "blink_image_resources_200_percent.pak")),
                              ui::SCALE_FACTOR_200P);
@@ -75,11 +82,9 @@ void InitializeResourceBundle(const std::string& locale) {
 #endif
 }
 
-MainDelegate::MainDelegate() {
-}
+MainDelegate::MainDelegate() {}
 
-MainDelegate::~MainDelegate() {
-}
+MainDelegate::~MainDelegate() {}
 
 std::unique_ptr<ContentClient> MainDelegate::CreateContentClient() {
   return std::unique_ptr<ContentClient>(new ContentClient);
@@ -104,7 +109,7 @@ void MainDelegate::PreSandboxStartup() {
   // browser process as a command line flag.
   if (SubprocessNeedsResourceBundle(process_type)) {
     std::string locale = cmd.GetSwitchValueASCII(switches::kLang);
-    InitializeResourceBundle(locale);
+    LoadResourceBundle(locale);
   }
 }
 

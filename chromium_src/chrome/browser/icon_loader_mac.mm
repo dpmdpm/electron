@@ -10,6 +10,7 @@
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/task_scheduler/post_task.h"
 #include "base/threading/thread.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_util_mac.h"
@@ -21,8 +22,9 @@ IconLoader::IconGroup IconLoader::GroupForFilepath(
 }
 
 // static
-content::BrowserThread::ID IconLoader::ReadIconThreadID() {
-  return content::BrowserThread::FILE;
+scoped_refptr<base::TaskRunner> IconLoader::GetReadIconTaskRunner() {
+  // NSWorkspace is thread-safe.
+  return base::CreateTaskRunnerWithTraits(traits());
 }
 
 void IconLoader::ReadIcon() {
@@ -30,9 +32,11 @@ void IconLoader::ReadIcon() {
   NSWorkspace* workspace = [NSWorkspace sharedWorkspace];
   NSImage* icon = [workspace iconForFileType:group];
 
+  std::unique_ptr<gfx::Image> image;
+
   if (icon_size_ == ALL) {
     // The NSImage already has all sizes.
-    image_.reset(new gfx::Image([icon retain]));
+    image = std::make_unique<gfx::Image>([icon retain]);
   } else {
     NSSize size = NSZeroSize;
     switch (icon_size_) {
@@ -48,11 +52,11 @@ void IconLoader::ReadIcon() {
     gfx::ImageSkia image_skia(gfx::ImageSkiaFromResizedNSImage(icon, size));
     if (!image_skia.isNull()) {
       image_skia.MakeThreadSafe();
-      image_.reset(new gfx::Image(image_skia));
+      image = std::make_unique<gfx::Image>(image_skia);
     }
   }
 
   target_task_runner_->PostTask(
-      FROM_HERE, base::Bind(callback_, base::Passed(&image_), group_));
+      FROM_HERE, base::Bind(callback_, base::Passed(&image), group_));
   delete this;
 }

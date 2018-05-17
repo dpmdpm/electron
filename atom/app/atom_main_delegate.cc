@@ -21,8 +21,17 @@
 #include "base/logging.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/common/content_switches.h"
+#include "ipc/ipc_features.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+#if BUILDFLAG(IPC_MESSAGE_LOG_ENABLED)
+#define IPC_MESSAGE_MACROS_LOG_ENABLED
+#include "content/public/common/content_ipc_logging.h"
+#define IPC_LOG_TABLE_ADD_ENTRY(msg_id, logger) \
+  content::RegisterIPCLogger(msg_id, logger)
+#include "atom/common/common_message_generator.h"
+#endif
 
 namespace atom {
 
@@ -36,22 +45,23 @@ bool IsBrowserProcess(base::CommandLine* cmd) {
 }
 
 #if defined(OS_WIN)
-void InvalidParameterHandler(const wchar_t*, const wchar_t*, const wchar_t*,
-                             unsigned int, uintptr_t) {
+void InvalidParameterHandler(const wchar_t*,
+                             const wchar_t*,
+                             const wchar_t*,
+                             unsigned int,
+                             uintptr_t) {
   // noop.
 }
 #endif
 
 }  // namespace
 
-AtomMainDelegate::AtomMainDelegate() {
-}
+AtomMainDelegate::AtomMainDelegate() {}
 
-AtomMainDelegate::~AtomMainDelegate() {
-}
+AtomMainDelegate::~AtomMainDelegate() {}
 
 bool AtomMainDelegate::BasicStartupComplete(int* exit_code) {
-  auto command_line = base::CommandLine::ForCurrentProcess();
+  auto* command_line = base::CommandLine::ForCurrentProcess();
 
   logging::LoggingSettings settings;
 #if defined(OS_WIN)
@@ -68,7 +78,7 @@ bool AtomMainDelegate::BasicStartupComplete(int* exit_code) {
 #else
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
 #endif  // defined(DEBUG)
-#else  // defined(OS_WIN)
+#else   // defined(OS_WIN)
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
 #endif  // !defined(OS_WIN)
 
@@ -86,9 +96,15 @@ bool AtomMainDelegate::BasicStartupComplete(int* exit_code) {
   logging::SetLogItems(true, false, true, false);
 
   // Enable convient stack printing.
-  bool enable_stack_dumping = env->HasVar("ELECTRON_ENABLE_STACK_DUMPING");
 #if defined(DEBUG) && defined(OS_LINUX)
-  enable_stack_dumping = true;
+  bool enable_stack_dumping = true;
+#else
+  bool enable_stack_dumping = env->HasVar("ELECTRON_ENABLE_STACK_DUMPING");
+#endif
+#if defined(ARCH_CPU_ARM_FAMILY) && defined(ARCH_CPU_32_BITS)
+  // For 32bit ARM enabling stack printing would end up crashing.
+  // https://github.com/electron/electron/pull/11230#issuecomment-363232482
+  enable_stack_dumping = false;
 #endif
   if (enable_stack_dumping)
     base::debug::EnableInProcessStackDumping();
@@ -113,14 +129,9 @@ bool AtomMainDelegate::BasicStartupComplete(int* exit_code) {
 void AtomMainDelegate::PreSandboxStartup() {
   brightray::MainDelegate::PreSandboxStartup();
 
-  // Set google API key.
-  std::unique_ptr<base::Environment> env(base::Environment::Create());
-  if (!env->HasVar("GOOGLE_API_KEY"))
-    env->SetVar("GOOGLE_API_KEY", GOOGLEAPIS_API_KEY);
-
-  auto command_line = base::CommandLine::ForCurrentProcess();
-  std::string process_type = command_line->GetSwitchValueASCII(
-      ::switches::kProcessType);
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  std::string process_type =
+      command_line->GetSwitchValueASCII(::switches::kProcessType);
 
   // Only append arguments for browser process.
   if (!IsBrowserProcess(command_line))
@@ -152,11 +163,11 @@ content::ContentBrowserClient* AtomMainDelegate::CreateContentBrowserClient() {
 }
 
 content::ContentRendererClient*
-    AtomMainDelegate::CreateContentRendererClient() {
+AtomMainDelegate::CreateContentRendererClient() {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kEnableSandbox) ||
+          switches::kEnableSandbox) ||
       !base::CommandLine::ForCurrentProcess()->HasSwitch(
-        ::switches::kNoSandbox)) {
+          ::switches::kNoSandbox)) {
     renderer_client_.reset(new AtomSandboxedRendererClient);
   } else {
     renderer_client_.reset(new AtomRendererClient);

@@ -22,7 +22,7 @@ using blink::WebLocalFrame;
 void PrintWebViewHelper::PrintPageInternal(
     const PrintMsg_PrintPage_Params& params,
     WebLocalFrame* frame) {
-  PdfMetafileSkia metafile(PDF_SKIA_DOCUMENT_TYPE);
+  PdfMetafileSkia metafile(SkiaDocumentType::PDF);
   CHECK(metafile.Init());
 
   int page_number = params.page_number;
@@ -56,11 +56,11 @@ bool PrintWebViewHelper::RenderPreviewPage(
   std::unique_ptr<PdfMetafileSkia> draft_metafile;
   PdfMetafileSkia* initial_render_metafile = print_preview_context_.metafile();
 
-  bool render_to_draft = print_preview_context_.IsModifiable() &&
-                         is_print_ready_metafile_sent_;
+  bool render_to_draft =
+      print_preview_context_.IsModifiable() && is_print_ready_metafile_sent_;
 
   if (render_to_draft) {
-    draft_metafile.reset(new PdfMetafileSkia(PDF_SKIA_DOCUMENT_TYPE));
+    draft_metafile.reset(new PdfMetafileSkia(SkiaDocumentType::PDF));
     CHECK(draft_metafile->Init());
     initial_render_metafile = draft_metafile.get();
   }
@@ -69,8 +69,8 @@ bool PrintWebViewHelper::RenderPreviewPage(
   gfx::Size page_size;
   RenderPage(printParams, page_number, print_preview_context_.prepared_frame(),
              true, initial_render_metafile, &page_size, NULL);
-  print_preview_context_.RenderedPreviewPage(
-      base::TimeTicks::Now() - begin_time);
+  print_preview_context_.RenderedPreviewPage(base::TimeTicks::Now() -
+                                             begin_time);
 
   if (draft_metafile.get()) {
     draft_metafile->FinishDocument();
@@ -80,7 +80,7 @@ bool PrintWebViewHelper::RenderPreviewPage(
       DCHECK(!draft_metafile.get());
       draft_metafile =
           print_preview_context_.metafile()->GetMetafileForCurrentPage(
-              PDF_SKIA_DOCUMENT_TYPE);
+              SkiaDocumentType::PDF);
     }
   }
   return PreviewPageRendered(page_number, draft_metafile.get());

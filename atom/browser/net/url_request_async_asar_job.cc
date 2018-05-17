@@ -7,33 +7,32 @@
 #include <string>
 
 #include "atom/common/atom_constants.h"
-#include "base/threading/sequenced_worker_pool.h"
+#include "base/task_scheduler/post_task.h"
 
 namespace atom {
 
 URLRequestAsyncAsarJob::URLRequestAsyncAsarJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate)
-    : JsAsker<asar::URLRequestAsarJob>(request, network_delegate) {
-}
+    : JsAsker<asar::URLRequestAsarJob>(request, network_delegate) {}
 
 void URLRequestAsyncAsarJob::StartAsync(std::unique_ptr<base::Value> options) {
   base::FilePath::StringType file_path;
   if (options->IsType(base::Value::Type::DICTIONARY)) {
-    static_cast<base::DictionaryValue*>(options.get())->GetString(
-        "path", &file_path);
+    static_cast<base::DictionaryValue*>(options.get())
+        ->GetString("path", &file_path);
   } else if (options->IsType(base::Value::Type::STRING)) {
     options->GetAsString(&file_path);
   }
 
   if (file_path.empty()) {
-    NotifyStartError(net::URLRequestStatus(
-          net::URLRequestStatus::FAILED, net::ERR_NOT_IMPLEMENTED));
+    NotifyStartError(net::URLRequestStatus(net::URLRequestStatus::FAILED,
+                                           net::ERR_NOT_IMPLEMENTED));
   } else {
     asar::URLRequestAsarJob::Initialize(
-        content::BrowserThread::GetBlockingPool()->
-            GetTaskRunnerWithShutdownBehavior(
-                base::SequencedWorkerPool::SKIP_ON_SHUTDOWN),
+        base::CreateSequencedTaskRunnerWithTraits(
+            {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
+             base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN}),
         base::FilePath(file_path));
     asar::URLRequestAsarJob::Start();
   }

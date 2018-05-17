@@ -18,7 +18,7 @@ class AtomSpeechRecognitionManagerDelegate
       public content::SpeechRecognitionEventListener {
  public:
   AtomSpeechRecognitionManagerDelegate();
-  virtual ~AtomSpeechRecognitionManagerDelegate();
+  ~AtomSpeechRecognitionManagerDelegate() override;
 
   // content::SpeechRecognitionEventListener:
   void OnRecognitionStart(int session_id) override;
@@ -29,16 +29,20 @@ class AtomSpeechRecognitionManagerDelegate
   void OnAudioEnd(int session_id) override;
   void OnRecognitionEnd(int session_id) override;
   void OnRecognitionResults(
-      int session_id, const content::SpeechRecognitionResults& result) override;
+      int session_id,
+      const content::SpeechRecognitionResults& result) override;
   void OnRecognitionError(
-      int session_id, const content::SpeechRecognitionError& error) override;
-  void OnAudioLevelsChange(int session_id, float volume,
+      int session_id,
+      const content::SpeechRecognitionError& error) override;
+  void OnAudioLevelsChange(int session_id,
+                           float volume,
                            float noise_volume) override;
 
   // content::SpeechRecognitionManagerDelegate:
   void CheckRecognitionIsAllowed(
       int session_id,
-      base::Callback<void(bool ask_user, bool is_allowed)> callback) override;
+      base::OnceCallback<void(bool ask_user, bool is_allowed)> callback)
+      override;
   content::SpeechRecognitionEventListener* GetEventListener() override;
   bool FilterProfanities(int render_process_id) override;
 

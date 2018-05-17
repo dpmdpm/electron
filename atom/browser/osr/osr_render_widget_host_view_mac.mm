@@ -12,11 +12,13 @@
 
 namespace atom {
 
-class MacHelper :
-    public content::BrowserCompositorMacClient,
-    public ui::AcceleratedWidgetMacNSView {
+class MacHelper : public content::BrowserCompositorMacClient,
+                  public ui::AcceleratedWidgetMacNSView {
  public:
-  explicit MacHelper(OffScreenRenderWidgetHostView* view) : view_(view) {}
+  explicit MacHelper(OffScreenRenderWidgetHostView* view) : view_(view) {
+    [this->AcceleratedWidgetGetNSView() setWantsLayer:YES];
+  }
+
   virtual ~MacHelper() {}
 
   // content::BrowserCompositorMacClient:
@@ -38,25 +40,25 @@ class MacHelper :
     return color;
   }
 
-  void BrowserCompositorMacSendBeginFrame(
-      const cc::BeginFrameArgs& args) override {
-    view_->render_widget_host()->Send(
-      new ViewMsg_BeginFrame(view_->render_widget_host()->GetRoutingID(),
-                             args));
+  void BrowserCompositorMacOnBeginFrame() override {}
+
+  viz::LocalSurfaceId GetLocalSurfaceId() const override {
+    return view_->local_surface_id();
   }
+
   // ui::AcceleratedWidgetMacNSView:
   NSView* AcceleratedWidgetGetNSView() const override {
     return [view_->window()->GetNativeWindow() contentView];
   }
 
   void AcceleratedWidgetGetVSyncParameters(
-        base::TimeTicks* timebase, base::TimeDelta* interval) const override {
+      base::TimeTicks* timebase,
+      base::TimeDelta* interval) const override {
     *timebase = base::TimeTicks();
     *interval = base::TimeDelta();
   }
 
-  void AcceleratedWidgetSwapCompleted() override {
-  }
+  void AcceleratedWidgetSwapCompleted() override {}
 
  private:
   OffScreenRenderWidgetHostView* view_;
@@ -71,30 +73,25 @@ OffScreenRenderWidgetHostView::GetAcceleratedWidgetMac() const {
   return nullptr;
 }
 
-void OffScreenRenderWidgetHostView::SetActive(bool active) {
-}
+void OffScreenRenderWidgetHostView::SetActive(bool active) {}
 
-void OffScreenRenderWidgetHostView::ShowDefinitionForSelection() {
-}
+void OffScreenRenderWidgetHostView::ShowDefinitionForSelection() {}
 
 bool OffScreenRenderWidgetHostView::SupportsSpeech() const {
   return false;
 }
 
-void OffScreenRenderWidgetHostView::SpeakSelection() {
-}
+void OffScreenRenderWidgetHostView::SpeakSelection() {}
 
 bool OffScreenRenderWidgetHostView::IsSpeaking() const {
   return false;
 }
 
-void OffScreenRenderWidgetHostView::StopSpeaking() {
-}
+void OffScreenRenderWidgetHostView::StopSpeaking() {}
 
-void OffScreenRenderWidgetHostView::SelectionChanged(
-    const base::string16& text,
-    size_t offset,
-    const gfx::Range& range) {
+void OffScreenRenderWidgetHostView::SelectionChanged(const base::string16& text,
+                                                     size_t offset,
+                                                     const gfx::Range& range) {
   if (range.is_empty() || text.empty()) {
     selected_text_.clear();
   } else {
@@ -138,4 +135,4 @@ OffScreenRenderWidgetHostView::GetDelegatedFrameHost() const {
   return browser_compositor_->GetDelegatedFrameHost();
 }
 
-} // namespace atom
+}  // namespace atom

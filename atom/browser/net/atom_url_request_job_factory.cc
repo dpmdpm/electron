@@ -15,7 +15,17 @@ using content::BrowserThread;
 
 namespace atom {
 
+namespace {
+
+int disable_protocol_intercept_flag_key = 0;
+
+}  // namespace
+
 typedef net::URLRequestJobFactory::ProtocolHandler ProtocolHandler;
+
+const void* DisableProtocolInterceptFlagKey() {
+  return &disable_protocol_intercept_flag_key;
+}
 
 AtomURLRequestJobFactory::AtomURLRequestJobFactory() {}
 
@@ -82,6 +92,7 @@ void AtomURLRequestJobFactory::Clear() {
   for (auto& it : protocol_handler_map_)
     delete it.second;
   protocol_handler_map_.clear();
+  original_protocols_.clear();
 }
 
 net::URLRequestJob* AtomURLRequestJobFactory::MaybeCreateJobWithProtocolHandler(
@@ -92,6 +103,8 @@ net::URLRequestJob* AtomURLRequestJobFactory::MaybeCreateJobWithProtocolHandler(
 
   auto it = protocol_handler_map_.find(scheme);
   if (it == protocol_handler_map_.end())
+    return nullptr;
+  if (request->GetUserData(DisableProtocolInterceptFlagKey()))
     return nullptr;
   return it->second->MaybeCreateJob(request, network_delegate);
 }
@@ -114,7 +127,7 @@ bool AtomURLRequestJobFactory::IsHandledProtocol(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   return HasProtocolHandler(scheme) ||
-      net::URLRequest::IsHandledProtocol(scheme);
+         net::URLRequest::IsHandledProtocol(scheme);
 }
 
 bool AtomURLRequestJobFactory::IsSafeRedirectTarget(

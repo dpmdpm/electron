@@ -5,18 +5,20 @@
 #include "chrome/renderer/pepper/chrome_renderer_pepper_host_factory.h"
 
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "chrome/renderer/pepper/pepper_flash_font_file_host.h"
 #include "chrome/renderer/pepper/pepper_flash_fullscreen_host.h"
 #include "chrome/renderer/pepper/pepper_flash_menu_host.h"
 #include "chrome/renderer/pepper/pepper_flash_renderer_host.h"
-#include "components/pdf/renderer/pepper_pdf_host.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/host/resource_host.h"
 #include "ppapi/proxy/ppapi_message_utils.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
+
+#if defined(ENABLE_PDF_VIEWER)
+#include "components/pdf/renderer/pepper_pdf_host.h"
+#endif  // defined(ENABLE_PDF_VIEWER)
 
 using ppapi::host::ResourceHost;
 
@@ -26,7 +28,8 @@ ChromeRendererPepperHostFactory::ChromeRendererPepperHostFactory(
 
 ChromeRendererPepperHostFactory::~ChromeRendererPepperHostFactory() {}
 
-std::unique_ptr<ResourceHost> ChromeRendererPepperHostFactory::CreateResourceHost(
+std::unique_ptr<ResourceHost>
+ChromeRendererPepperHostFactory::CreateResourceHost(
     ppapi::host::PpapiHost* host,
     PP_Resource resource,
     PP_Instance instance,
@@ -81,14 +84,16 @@ std::unique_ptr<ResourceHost> ChromeRendererPepperHostFactory::CreateResourceHos
     }
   }
 
+#if defined(ENABLE_PDF_VIEWER)
   if (host_->GetPpapiHost()->permissions().HasPermission(
           ppapi::PERMISSION_PRIVATE)) {
     switch (message.type()) {
       case PpapiHostMsg_PDF_Create::ID: {
-        return base::MakeUnique<pdf::PepperPDFHost>(host_, instance, resource);
+        return std::make_unique<pdf::PepperPDFHost>(host_, instance, resource);
       }
     }
   }
+#endif  // defined(ENABLE_PDF_VIEWER)
 
   return std::unique_ptr<ResourceHost>();
 }

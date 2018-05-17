@@ -4,12 +4,13 @@
 
 #include "atom/browser/ui/tray_icon_cocoa.h"
 
+#include "atom/browser/ui/cocoa/NSString+ANSI.h"
 #include "atom/browser/ui/cocoa/atom_menu_controller.h"
 #include "base/strings/sys_string_conversions.h"
+#include "ui/display/screen.h"
 #include "ui/events/cocoa/cocoa_event_utils.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
-#include "ui/display/screen.h"
 
 namespace {
 
@@ -21,15 +22,19 @@ const CGFloat kVerticalTitleMargin = 2;
 }  //  namespace
 
 @interface StatusItemView : NSView {
-  atom::TrayIconCocoa* trayIcon_; // weak
-  AtomMenuController* menuController_; // weak
+  atom::TrayIconCocoa* trayIcon_;       // weak
+  AtomMenuController* menuController_;  // weak
   atom::TrayIcon::HighlightMode highlight_mode_;
+  BOOL ignoreDoubleClickEvents_;
   BOOL forceHighlight_;
   BOOL inMouseEventSequence_;
+  BOOL ANSI_;
   base::scoped_nsobject<NSImage> image_;
   base::scoped_nsobject<NSImage> alternateImage_;
   base::scoped_nsobject<NSString> title_;
+  base::scoped_nsobject<NSMutableAttributedString> attributedTitle_;
   base::scoped_nsobject<NSStatusItem> statusItem_;
+  base::scoped_nsobject<NSTrackingArea> trackingArea_;
 }
 
 @end  // @interface StatusItemView
@@ -40,41 +45,49 @@ const CGFloat kVerticalTitleMargin = 2;
   image_.reset([image copy]);
   trayIcon_ = icon;
   highlight_mode_ = atom::TrayIcon::HighlightMode::SELECTION;
+  ignoreDoubleClickEvents_ = NO;
   forceHighlight_ = NO;
   inMouseEventSequence_ = NO;
 
-  if ((self = [super initWithFrame: CGRectZero])) {
-    [self registerForDraggedTypes: @[
+  if ((self = [super initWithFrame:CGRectZero])) {
+    [self registerForDraggedTypes:@[
       NSFilenamesPboardType,
       NSStringPboardType,
     ]];
 
     // Create the status item.
-    NSStatusItem * item = [[NSStatusBar systemStatusBar]
-                            statusItemWithLength:NSVariableStatusItemLength];
+    NSStatusItem* item = [[NSStatusBar systemStatusBar]
+        statusItemWithLength:NSVariableStatusItemLength];
     statusItem_.reset([item retain]);
     [statusItem_ setView:self];
     // Finalize setup by sizing our views
     [self updateDimensions];
 
-    // Add NSTrackingArea for listening to mouseEnter and mouseExit events
-    auto trackingArea = [[[NSTrackingArea alloc]
+    // Add NSTrackingArea for listening to mouseEnter, mouseExit, and mouseMove
+    // events
+    trackingArea_.reset([[NSTrackingArea alloc]
         initWithRect:[self bounds]
-             options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways
+             options:NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved |
+                     NSTrackingActiveAlways
                owner:self
-            userInfo:nil] autorelease];
-    [self addTrackingArea:trackingArea];
+            userInfo:nil]);
+    [self addTrackingArea:trackingArea_];
   }
   return self;
 }
 
 - (void)updateDimensions {
-  NSStatusBar * bar = [NSStatusBar systemStatusBar];
-  [self setFrame: NSMakeRect(0, 0, [self fullWidth], [bar thickness])];
+  NSStatusBar* bar = [NSStatusBar systemStatusBar];
+  [self setFrame:NSMakeRect(0, 0, [self fullWidth], [bar thickness])];
   [self setNeedsDisplay:YES];
 }
 
 - (void)removeItem {
+  // Turn off tracking events to prevent crash
+  if (trackingArea_) {
+    [self removeTrackingArea:trackingArea_];
+    trackingArea_.reset();
+  }
   [[NSStatusBar systemStatusBar] removeStatusItem:statusItem_];
   statusItem_.reset();
 }
@@ -85,12 +98,11 @@ const CGFloat kVerticalTitleMargin = 2;
   //   | icon | title |
   ///  ----------------
 
-  BOOL highlight = [self shouldHighlight];
-  BOOL highlightContent = highlight | [self isDarkMode];
   CGFloat thickness = [[statusItem_ statusBar] thickness];
 
   // Draw the system bar background.
-  [statusItem_ drawStatusBarBackgroundInRect:self.bounds withHighlight:highlight];
+  [statusItem_ drawStatusBarBackgroundInRect:self.bounds
+                               withHighlight:[self shouldHighlight]];
 
   // Determine which image to use.
   NSImage* image = image_.get();
@@ -102,27 +114,24 @@ const CGFloat kVerticalTitleMargin = 2;
   if ([image isTemplate] == YES) {
     NSImage* imageWithColor = [[image copy] autorelease];
     [imageWithColor lockFocus];
-    [[self colorWithHighlight: highlightContent] set];
-    CGRect imageBounds = CGRectMake(0,0, image.size.width, image.size.height);
+    [[self colorWithHighlight:[self isHighlighted]] set];
+    CGRect imageBounds = CGRectMake(0, 0, image.size.width, image.size.height);
     NSRectFillUsingOperation(imageBounds, NSCompositeSourceAtop);
     [imageWithColor unlockFocus];
     image = imageWithColor;
   }
 
   // Draw the image
-  [image drawInRect: CGRectMake(
-    roundf(([self iconWidth] - image.size.width) / 2),
-    roundf((thickness - image.size.height) / 2),
-    image.size.width,
-    image.size.height
-  )];
+  [image
+      drawInRect:CGRectMake(roundf(([self iconWidth] - image.size.width) / 2),
+                            roundf((thickness - image.size.height) / 2),
+                            image.size.width, image.size.height)];
 
   if (title_) {
     // Draw title.
-    NSRect titleDrawRect = NSMakeRect(
-        [self iconWidth], -kVerticalTitleMargin, [self titleWidth], thickness);
-    [title_ drawInRect:titleDrawRect
-        withAttributes:[self titleAttributesWithHighlight:highlightContent]];
+    NSRect titleDrawRect = NSMakeRect([self iconWidth], -kVerticalTitleMargin,
+                                      [self titleWidth], thickness);
+    [attributedTitle_ drawInRect:titleDrawRect];
   }
 }
 
@@ -130,6 +139,11 @@ const CGFloat kVerticalTitleMargin = 2;
   NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
   NSString* mode = [defaults stringForKey:@"AppleInterfaceStyle"];
   return mode && [mode isEqualToString:@"Dark"];
+}
+
+- (BOOL)isHighlighted {
+  BOOL highlight = [self shouldHighlight];
+  return highlight | [self isDarkMode];
 }
 
 // The width of the full status item.
@@ -166,28 +180,16 @@ const CGFloat kVerticalTitleMargin = 2;
 // The width of the title.
 - (CGFloat)titleWidth {
   if (!title_)
-     return 0;
-  base::scoped_nsobject<NSAttributedString> attributes(
-      [[NSAttributedString alloc] initWithString:title_
-                                      attributes:[self titleAttributes]]);
-  return [attributes size].width;
+    return 0;
+  return [attributedTitle_ size].width;
 }
 
 - (NSColor*)colorWithHighlight:(BOOL)highlight {
-  return highlight ?
-      [NSColor whiteColor] :
-      [NSColor colorWithRed:0.265625 green:0.25390625 blue:0.234375 alpha:1.0];
-}
-
-- (NSDictionary*)titleAttributesWithHighlight:(BOOL)highlight {
-  return @{
-      NSFontAttributeName:[NSFont menuBarFontOfSize:0],
-      NSForegroundColorAttributeName:[self colorWithHighlight: highlight]
-  };
-}
-
-- (NSDictionary*)titleAttributes {
-  return [self titleAttributesWithHighlight:[self isDarkMode]];
+  return highlight ? [NSColor whiteColor]
+                   : [NSColor colorWithRed:0.265625
+                                     green:0.25390625
+                                      blue:0.234375
+                                     alpha:1.0];
 }
 
 - (void)setImage:(NSImage*)image {
@@ -204,13 +206,55 @@ const CGFloat kVerticalTitleMargin = 2;
   [self setNeedsDisplay:YES];
 }
 
+- (void)setIgnoreDoubleClickEvents:(BOOL)ignore {
+  ignoreDoubleClickEvents_ = ignore;
+}
+
+- (BOOL)getIgnoreDoubleClickEvents {
+  return ignoreDoubleClickEvents_;
+}
+
 - (void)setTitle:(NSString*)title {
   if (title.length > 0) {
     title_.reset([title copy]);
+    ANSI_ = [title containsANSICodes];
   } else {
     title_.reset();
+    ANSI_ = NO;
   }
+  [self updateAttributedTitle];
   [self updateDimensions];
+}
+
+- (void)updateAttributedTitle {
+  NSDictionary* attributes =
+      @{NSFontAttributeName : [NSFont menuBarFontOfSize:0]};
+
+  if (ANSI_) {
+    NSCharacterSet* whites = [NSCharacterSet whitespaceCharacterSet];
+    NSString* title = [title_ stringByTrimmingCharactersInSet:whites];
+    attributedTitle_.reset([title attributedStringParsingANSICodes]);
+    [attributedTitle_ addAttributes:attributes
+                              range:NSMakeRange(0, [attributedTitle_ length])];
+    return;
+  }
+
+  // check title_ being nil
+  NSString* title = @"";
+  if (title_)
+    title = title_;
+
+  attributedTitle_.reset([[NSMutableAttributedString alloc]
+      initWithString:title
+          attributes:attributes]);
+
+  // NSFontAttributeName:[NSFont menuBarFontOfSize:0],
+  // NSForegroundColorAttributeName:[self colorWithHighlight: highlight]
+  [attributedTitle_ addAttributes:attributes
+                            range:NSMakeRange(0, [attributedTitle_ length])];
+  [attributedTitle_ addAttribute:NSForegroundColorAttributeName
+                           value:[self colorWithHighlight:[self isHighlighted]]
+                           range:NSMakeRange(0, [attributedTitle_ length])];
 }
 
 - (void)setMenuController:(AtomMenuController*)menu {
@@ -224,10 +268,10 @@ const CGFloat kVerticalTitleMargin = 2;
 
 - (void)mouseUp:(NSEvent*)event {
   if (!inMouseEventSequence_) {
-     // If the menu is showing, when user clicked the tray icon, the `mouseDown`
-     // event will be dissmissed, we need to close the menu at this time.
-     [self setNeedsDisplay:YES];
-     return;
+    // If the menu is showing, when user clicked the tray icon, the `mouseDown`
+    // event will be dissmissed, we need to close the menu at this time.
+    [self setNeedsDisplay:YES];
+    return;
   }
   inMouseEventSequence_ = NO;
 
@@ -245,14 +289,18 @@ const CGFloat kVerticalTitleMargin = 2;
   if (menuController_)
     return;
 
-  // Single click event.
-  if (event.clickCount == 1)
+  // If we are ignoring double click events, we should ignore the `clickCount`
+  // value and immediately emit a click event.
+  BOOL shouldBeHandledAsASingleClick = (event.clickCount == 1) || ignoreDoubleClickEvents_;
+  if (shouldBeHandledAsASingleClick)
     trayIcon_->NotifyClicked(
         gfx::ScreenRectFromNSRect(event.window.frame),
+        gfx::ScreenPointFromNSPoint([event locationInWindow]),
         ui::EventFlagsFromModifiers([event modifierFlags]));
 
   // Double click event.
-  if (event.clickCount == 2)
+  BOOL shouldBeHandledAsADoubleClick = (event.clickCount == 2) && !ignoreDoubleClickEvents_;
+  if (shouldBeHandledAsADoubleClick)
     trayIcon_->NotifyDoubleClicked(
         gfx::ScreenRectFromNSRect(event.window.frame),
         ui::EventFlagsFromModifiers([event modifierFlags]));
@@ -263,9 +311,9 @@ const CGFloat kVerticalTitleMargin = 2;
 - (void)popUpContextMenu:(atom::AtomMenuModel*)menu_model {
   // Show a custom menu.
   if (menu_model) {
-    base::scoped_nsobject<AtomMenuController> menuController(
-        [[AtomMenuController alloc] initWithModel:menu_model
-                            useDefaultAccelerator:NO]);
+    base::scoped_nsobject<AtomMenuController> menuController([
+        [AtomMenuController alloc] initWithModel:menu_model
+                           useDefaultAccelerator:NO]);
     forceHighlight_ = YES;  // Should highlight when showing menu.
     [self setNeedsDisplay:YES];
     [statusItem_ popUpStatusItemMenu:[menuController menu]];
@@ -290,7 +338,7 @@ const CGFloat kVerticalTitleMargin = 2;
       ui::EventFlagsFromModifiers([event modifierFlags]));
 }
 
-- (NSDragOperation)draggingEntered:(id <NSDraggingInfo>)sender {
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
   trayIcon_->NotifyDragEntered();
   return NSDragOperationCopy;
 }
@@ -307,11 +355,17 @@ const CGFloat kVerticalTitleMargin = 2;
       ui::EventFlagsFromModifiers([event modifierFlags]));
 }
 
-- (void)draggingExited:(id <NSDraggingInfo>)sender {
+- (void)mouseMoved:(NSEvent*)event {
+  trayIcon_->NotifyMouseMoved(
+      gfx::ScreenPointFromNSPoint([event locationInWindow]),
+      ui::EventFlagsFromModifiers([event modifierFlags]));
+}
+
+- (void)draggingExited:(id<NSDraggingInfo>)sender {
   trayIcon_->NotifyDragExited();
 }
 
-- (void)draggingEnded:(id <NSDraggingInfo>)sender {
+- (void)draggingEnded:(id<NSDraggingInfo>)sender {
   trayIcon_->NotifyDragEnded();
 
   if (NSPointInRect([sender draggingLocation], self.frame)) {
@@ -319,7 +373,7 @@ const CGFloat kVerticalTitleMargin = 2;
   }
 }
 
-- (BOOL)handleDrop:(id <NSDraggingInfo>)sender {
+- (BOOL)handleDrop:(id<NSDraggingInfo>)sender {
   NSPasteboard* pboard = [sender draggingPasteboard];
 
   if ([[pboard types] containsObject:NSFilenamesPboardType]) {
@@ -338,11 +392,11 @@ const CGFloat kVerticalTitleMargin = 2;
   return NO;
 }
 
-- (BOOL)prepareForDragOperation:(id <NSDraggingInfo>)sender {
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender {
   return YES;
 }
 
-- (BOOL)performDragOperation:(id <NSDraggingInfo>)sender {
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
   [self handleDrop:sender];
   return YES;
 }
@@ -363,8 +417,7 @@ const CGFloat kVerticalTitleMargin = 2;
 
 namespace atom {
 
-TrayIconCocoa::TrayIconCocoa() : menu_model_(nullptr) {
-}
+TrayIconCocoa::TrayIconCocoa() : menu_model_(nullptr) {}
 
 TrayIconCocoa::~TrayIconCocoa() {
   [status_item_view_ removeItem];
@@ -377,8 +430,7 @@ void TrayIconCocoa::SetImage(const gfx::Image& image) {
     [status_item_view_ setImage:image.AsNSImage()];
   } else {
     status_item_view_.reset(
-        [[StatusItemView alloc] initWithImage:image.AsNSImage()
-                                         icon:this]);
+        [[StatusItemView alloc] initWithImage:image.AsNSImage() icon:this]);
   }
 }
 
@@ -396,6 +448,14 @@ void TrayIconCocoa::SetTitle(const std::string& title) {
 
 void TrayIconCocoa::SetHighlightMode(TrayIcon::HighlightMode mode) {
   [status_item_view_ setHighlight:mode];
+}
+
+void TrayIconCocoa::SetIgnoreDoubleClickEvents(bool ignore) {
+  [status_item_view_ setIgnoreDoubleClickEvents:ignore];
+}
+
+bool TrayIconCocoa::GetIgnoreDoubleClickEvents() {
+  return [status_item_view_ getIgnoreDoubleClickEvents];
 }
 
 void TrayIconCocoa::PopUpContextMenu(const gfx::Point& pos,
@@ -424,7 +484,7 @@ gfx::Rect TrayIconCocoa::GetBounds() {
   return bounds;
 }
 
-void TrayIconCocoa::MenuWillClose() {
+void TrayIconCocoa::OnMenuWillClose() {
   [status_item_view_ setNeedsDisplay:YES];
 }
 

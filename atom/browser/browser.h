@@ -38,7 +38,7 @@ class LoginHandler;
 class Browser : public WindowListObserver {
  public:
   Browser();
-  ~Browser();
+  ~Browser() override;
 
   static Browser* Get();
 
@@ -100,11 +100,18 @@ class Browser : public WindowListObserver {
     bool opened_as_hidden = false;
     base::string16 path;
     std::vector<base::string16> args;
+
+    LoginItemSettings();
+    ~LoginItemSettings();
+    LoginItemSettings(const LoginItemSettings&);
   };
   void SetLoginItemSettings(LoginItemSettings settings);
   LoginItemSettings GetLoginItemSettings(const LoginItemSettings& options);
 
 #if defined(OS_MACOSX)
+  // Set the handler which decides whether to shutdown.
+  void SetShutdownHandler(base::Callback<bool()> handler);
+
   // Hide the application.
   void Hide();
 
@@ -119,9 +126,31 @@ class Browser : public WindowListObserver {
   // Returns the type name of the current user activity.
   std::string GetCurrentActivityType();
 
+  // Invalidates the current user activity.
+  void InvalidateCurrentActivity();
+
+  // Updates the current user activity
+  void UpdateCurrentActivity(const std::string& type,
+                             const base::DictionaryValue& user_info);
+
+  // Indicates that an user activity is about to be resumed.
+  bool WillContinueUserActivity(const std::string& type);
+
+  // Indicates a failure to resume a Handoff activity.
+  void DidFailToContinueUserActivity(const std::string& type,
+                                     const std::string& error);
+
   // Resumes an activity via hand-off.
   bool ContinueUserActivity(const std::string& type,
                             const base::DictionaryValue& user_info);
+
+  // Indicates that an activity was continued on another device.
+  void UserActivityWasContinued(const std::string& type,
+                                const base::DictionaryValue& user_info);
+
+  // Gives an oportunity to update the Handoff payload.
+  bool UpdateUserActivityState(const std::string& type,
+                               const base::DictionaryValue& user_info);
 
   // Bounce the dock icon.
   enum BounceType {
@@ -202,13 +231,11 @@ class Browser : public WindowListObserver {
   void RequestLogin(LoginHandler* login_handler,
                     std::unique_ptr<base::DictionaryValue> request_details);
 
-  void AddObserver(BrowserObserver* obs) {
-    observers_.AddObserver(obs);
-  }
+  void PreMainMessageLoopRun();
 
-  void RemoveObserver(BrowserObserver* obs) {
-    observers_.RemoveObserver(obs);
-  }
+  void AddObserver(BrowserObserver* obs) { observers_.AddObserver(obs); }
+
+  void RemoveObserver(BrowserObserver* obs) { observers_.RemoveObserver(obs); }
 
   bool is_shutting_down() const { return is_shutdown_; }
   bool is_quiting() const { return is_quiting_; }
@@ -246,14 +273,7 @@ class Browser : public WindowListObserver {
   // The browser is being shutdown.
   bool is_shutdown_;
 
-  std::string version_override_;
-  std::string name_override_;
-
   int badge_count_ = 0;
-
-#if defined(OS_WIN)
-  base::string16 app_user_model_id_;
-#endif
 
 #if defined(OS_MACOSX)
   base::DictionaryValue about_panel_options_;

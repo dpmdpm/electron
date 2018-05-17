@@ -8,6 +8,7 @@
 
 #include "base/environment.h"
 #include "base/strings/string_util.h"
+#include "base/threading/thread_restrictions.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_proxy.h"
@@ -34,8 +35,7 @@ void SetWMSpecState(::Window xwindow, bool enabled, ::Atom state) {
 
   XDisplay* xdisplay = gfx::GetXDisplay();
   XSendEvent(xdisplay, DefaultRootWindow(xdisplay), False,
-             SubstructureRedirectMask | SubstructureNotifyMask,
-             &xclient);
+             SubstructureRedirectMask | SubstructureNotifyMask, &xclient);
 }
 
 void SetWindowType(::Window xwindow, const std::string& type) {
@@ -44,13 +44,13 @@ void SetWindowType(::Window xwindow, const std::string& type) {
   ::Atom window_type = XInternAtom(
       xdisplay, (type_prefix + base::ToUpperASCII(type)).c_str(), False);
   XChangeProperty(xdisplay, xwindow,
-                  XInternAtom(xdisplay, "_NET_WM_WINDOW_TYPE", False),
-                  XA_ATOM,
+                  XInternAtom(xdisplay, "_NET_WM_WINDOW_TYPE", False), XA_ATOM,
                   32, PropModeReplace,
                   reinterpret_cast<unsigned char*>(&window_type), 1);
 }
 
 bool ShouldUseGlobalMenuBar() {
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
   std::unique_ptr<base::Environment> env(base::Environment::Create());
   if (env->HasVar("ELECTRON_FORCE_WINDOW_MENU_BAR"))
     return false;

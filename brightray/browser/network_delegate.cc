@@ -23,7 +23,7 @@ const char kIgnoreConnectionsLimit[] = "ignore-connections-limit";
 }  // namespace
 
 NetworkDelegate::NetworkDelegate() {
-  auto command_line = base::CommandLine::ForCurrentProcess();
+  auto* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(kIgnoreConnectionsLimit)) {
     std::string value =
         command_line->GetSwitchValueASCII(kIgnoreConnectionsLimit);
@@ -32,13 +32,11 @@ NetworkDelegate::NetworkDelegate() {
   }
 }
 
-NetworkDelegate::~NetworkDelegate() {
-}
+NetworkDelegate::~NetworkDelegate() {}
 
-int NetworkDelegate::OnBeforeURLRequest(
-    net::URLRequest* request,
-    const net::CompletionCallback& callback,
-    GURL* new_url) {
+int NetworkDelegate::OnBeforeURLRequest(net::URLRequest* request,
+                                        const net::CompletionCallback& callback,
+                                        GURL* new_url) {
   for (const auto& domain : ignore_connections_limit_domains_) {
     if (request->url().DomainIs(domain)) {
       // Allow unlimited concurrent connections.
@@ -60,15 +58,13 @@ int NetworkDelegate::OnBeforeStartTransaction(
 
 void NetworkDelegate::OnStartTransaction(
     net::URLRequest* request,
-    const net::HttpRequestHeaders& headers) {
-}
+    const net::HttpRequestHeaders& headers) {}
 
 void NetworkDelegate::OnBeforeSendHeaders(
     net::URLRequest* request,
     const net::ProxyInfo& proxy_info,
     const net::ProxyRetryInfoMap& proxy_retry_info,
-    net::HttpRequestHeaders* headers) {
-}
+    net::HttpRequestHeaders* headers) {}
 
 int NetworkDelegate::OnHeadersReceived(
     net::URLRequest* request,
@@ -80,29 +76,22 @@ int NetworkDelegate::OnHeadersReceived(
 }
 
 void NetworkDelegate::OnBeforeRedirect(net::URLRequest* request,
-                                            const GURL& new_location) {
-}
+                                       const GURL& new_location) {}
 
-void NetworkDelegate::OnResponseStarted(net::URLRequest* request) {
-}
+void NetworkDelegate::OnResponseStarted(net::URLRequest* request) {}
 
 void NetworkDelegate::OnNetworkBytesReceived(net::URLRequest* request,
-                                             int64_t bytes_read) {
-}
+                                             int64_t bytes_read) {}
 
 void NetworkDelegate::OnNetworkBytesSent(net::URLRequest* request,
-                                         int64_t bytes_sent) {
-}
+                                         int64_t bytes_sent) {}
 
-void NetworkDelegate::OnCompleted(net::URLRequest* request, bool started) {
-}
+void NetworkDelegate::OnCompleted(net::URLRequest* request, bool started) {}
 
-void NetworkDelegate::OnURLRequestDestroyed(net::URLRequest* request) {
-}
+void NetworkDelegate::OnURLRequestDestroyed(net::URLRequest* request) {}
 
 void NetworkDelegate::OnPACScriptError(int line_number,
-                                       const base::string16& error) {
-}
+                                       const base::string16& error) {}
 
 NetworkDelegate::AuthRequiredResponse NetworkDelegate::OnAuthRequired(
     net::URLRequest* request,
@@ -113,18 +102,20 @@ NetworkDelegate::AuthRequiredResponse NetworkDelegate::OnAuthRequired(
 }
 
 bool NetworkDelegate::OnCanGetCookies(const net::URLRequest& request,
-                                           const net::CookieList& cookie_list) {
+                                      const net::CookieList& cookie_list) {
   return true;
 }
 
 bool NetworkDelegate::OnCanSetCookie(const net::URLRequest& request,
-                                          const std::string& cookie_line,
-                                          net::CookieOptions* options) {
+                                     const std::string& cookie_line,
+                                     net::CookieOptions* options) {
   return true;
 }
 
-bool NetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
-                                           const base::FilePath& path) const {
+bool NetworkDelegate::OnCanAccessFile(
+    const net::URLRequest& request,
+    const base::FilePath& original_path,
+    const base::FilePath& absolute_path) const {
   return true;
 }
 
@@ -142,6 +133,28 @@ bool NetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(
     const net::URLRequest& request,
     const GURL& target_url,
     const GURL& referrer_url) const {
+  return false;
+}
+
+// TODO(deepak1556) : Enable after hooking into the reporting service
+// https://crbug.com/704259
+bool NetworkDelegate::OnCanQueueReportingReport(
+    const url::Origin& origin) const {
+  return false;
+}
+
+bool NetworkDelegate::OnCanSendReportingReport(
+    const url::Origin& origin) const {
+  return false;
+}
+
+bool NetworkDelegate::OnCanSetReportingClient(const url::Origin& origin,
+                                              const GURL& endpoint) const {
+  return false;
+}
+
+bool NetworkDelegate::OnCanUseReportingClient(const url::Origin& origin,
+                                              const GURL& endpoint) const {
   return false;
 }
 

@@ -12,10 +12,14 @@
 namespace atom {
 
 NativeBrowserViewViews::NativeBrowserViewViews(
-    brightray::InspectableWebContentsView* web_contents_view)
-    : NativeBrowserView(web_contents_view) {}
+    brightray::InspectableWebContents* inspectable_web_contents)
+    : NativeBrowserView(inspectable_web_contents) {}
 
 NativeBrowserViewViews::~NativeBrowserViewViews() {}
+
+void NativeBrowserViewViews::SetAutoResizeFlags(uint8_t flags) {
+  auto_resize_flags_ = flags;
+}
 
 void NativeBrowserViewViews::SetBounds(const gfx::Rect& bounds) {
   auto* view = GetInspectableWebContentsView()->GetView();
@@ -24,13 +28,13 @@ void NativeBrowserViewViews::SetBounds(const gfx::Rect& bounds) {
 
 void NativeBrowserViewViews::SetBackgroundColor(SkColor color) {
   auto* view = GetInspectableWebContentsView()->GetView();
-  view->set_background(views::Background::CreateSolidBackground(color));
+  view->SetBackground(views::CreateSolidBackground(color));
 }
 
 // static
 NativeBrowserView* NativeBrowserView::Create(
-    brightray::InspectableWebContentsView* web_contents_view) {
-  return new NativeBrowserViewViews(web_contents_view);
+    brightray::InspectableWebContents* inspectable_web_contents) {
+  return new NativeBrowserViewViews(inspectable_web_contents);
 }
 
 }  // namespace atom

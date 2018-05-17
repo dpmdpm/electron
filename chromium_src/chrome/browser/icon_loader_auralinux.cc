@@ -16,10 +16,11 @@ IconLoader::IconGroup IconLoader::GroupForFilepath(
 }
 
 // static
-content::BrowserThread::ID IconLoader::ReadIconThreadID() {
+scoped_refptr<base::TaskRunner> IconLoader::GetReadIconTaskRunner() {
   // ReadIcon() calls into views::LinuxUI and GTK2 code, so it must be on the UI
   // thread.
-  return content::BrowserThread::UI;
+  return content::BrowserThread::GetTaskRunnerForThread(
+      content::BrowserThread::UI);
 }
 
 void IconLoader::ReadIcon() {
@@ -38,14 +39,17 @@ void IconLoader::ReadIcon() {
       NOTREACHED();
   }
 
+  std::unique_ptr<gfx::Image> image;
+
   views::LinuxUI* ui = views::LinuxUI::instance();
   if (ui) {
-    gfx::Image image = ui->GetIconForContentType(group_, size_pixels);
-    if (!image.IsEmpty())
-      image_.reset(new gfx::Image(image));
+    image = std::make_unique<gfx::Image>(
+        ui->GetIconForContentType(group_, size_pixels));
+    if (image->IsEmpty())
+      image = nullptr;
   }
 
   target_task_runner_->PostTask(
-      FROM_HERE, base::Bind(callback_, base::Passed(&image_), group_));
+      FROM_HERE, base::BindOnce(callback_, base::Passed(&image), group_));
   delete this;
 }

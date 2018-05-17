@@ -13,7 +13,6 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
-#include "base/threading/non_thread_safe.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -44,7 +43,7 @@ class PrintQueriesQueue : public base::RefCountedThreadSafe<PrintQueriesQueue> {
 
  private:
   friend class base::RefCountedThreadSafe<PrintQueriesQueue>;
-  typedef std::vector<scoped_refptr<PrinterQuery> > PrinterQueries;
+  typedef std::vector<scoped_refptr<PrinterQuery>> PrinterQueries;
 
   virtual ~PrintQueriesQueue();
 
@@ -74,7 +73,7 @@ class PrintJobManager : public content::NotificationObserver {
   scoped_refptr<PrintQueriesQueue> queue();
 
  private:
-  typedef std::set<scoped_refptr<PrintJob> > PrintJobs;
+  typedef std::set<scoped_refptr<PrintJob>> PrintJobs;
 
   // Processes a NOTIFY_PRINT_JOB_EVENT notification.
   void OnPrintJobEvent(PrintJob* print_job,

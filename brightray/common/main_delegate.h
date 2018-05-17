@@ -24,13 +24,13 @@ namespace brightray {
 class BrowserClient;
 class ContentClient;
 
-void InitializeResourceBundle(const std::string& locale);
+void LoadResourceBundle(const std::string& locale);
 void LoadCommonResources();
 
 class MainDelegate : public content::ContentMainDelegate {
  public:
   MainDelegate();
-  ~MainDelegate();
+  ~MainDelegate() override;
 
  protected:
   // Subclasses can override this to provide their own ContentClient

@@ -16,7 +16,7 @@
 namespace base {
 class ListValue;
 class Value;
-}
+}  // namespace base
 
 namespace brightray {
 
@@ -78,6 +78,8 @@ class DevToolsEmbedderMessageDispatcher {
                                const std::string& value) = 0;
     virtual void RemovePreference(const std::string& name) = 0;
     virtual void ClearPreferences() = 0;
+    virtual void RegisterExtensionsAPI(const std::string& origin,
+                                       const std::string& script) = 0;
   };
 
   using DispatchCallback = Delegate::DispatchCallback;

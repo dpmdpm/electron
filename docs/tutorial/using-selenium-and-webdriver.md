@@ -14,7 +14,7 @@ From [ChromeDriver - WebDriver for Chrome][chrome-driver]:
 for Electron. It is built on top of [WebdriverIO](http://webdriver.io/) and
 has helpers to access Electron APIs in your tests and bundles ChromeDriver.
 
-```bash
+```sh
 $ npm install --save-dev spectron
 ```
 
@@ -57,7 +57,7 @@ a Node package for testing with web driver, we will use it as an example.
 
 First you need to download the `chromedriver` binary, and run it:
 
-```bash
+```sh
 $ npm install electron-chromedriver
 $ ./node_modules/.bin/chromedriver
 Starting ChromeDriver (v2.10.291558) on port 9515
@@ -68,15 +68,15 @@ Remember the port number `9515`, which will be used later
 
 ### 2. Install WebDriverJS
 
-```bash
+```sh
 $ npm install selenium-webdriver
 ```
 
 ### 3. Connect to ChromeDriver
 
-The usage of `selenium-webdriver` with Electron is basically the same with
-upstream, except that you have to manually specify how to connect chrome driver
-and where to find Electron's binary:
+The usage of `selenium-webdriver` with Electron is the same with
+upstream, except that you have to manually specify how to connect
+chrome driver and where to find Electron's binary:
 
 ```javascript
 const webdriver = require('selenium-webdriver')
@@ -114,7 +114,7 @@ driver.
 
 First you need to download the `chromedriver` binary, and run it:
 
-```bash
+```sh
 $ npm install electron-chromedriver
 $ ./node_modules/.bin/chromedriver --url-base=wd/hub --port=9515
 Starting ChromeDriver (v2.10.291558) on port 9515
@@ -125,7 +125,7 @@ Remember the port number `9515`, which will be used later
 
 ### 2. Install WebdriverIO
 
-```bash
+```sh
 $ npm install webdriverio
 ```
 
@@ -160,7 +160,7 @@ client
 
 ## Workflow
 
-To test your application without rebuilding Electron, simply
+To test your application without rebuilding Electron,
 [place](https://github.com/electron/electron/blob/master/docs/tutorial/application-distribution.md)
 your app source into Electron's resource directory.
 
@@ -169,4 +169,4 @@ your app's folder. This eliminates the need to copy-paste your app into
 Electron's resource directory.
 
 [chrome-driver]: https://sites.google.com/a/chromium.org/chromedriver/
-[spectron]: https://electron.atom.io/spectron
+[spectron]: https://electronjs.org/spectron

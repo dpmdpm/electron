@@ -33,16 +33,15 @@ bool PrintWebViewHelper::RenderPreviewPage(
   std::unique_ptr<PdfMetafileSkia> draft_metafile;
   PdfMetafileSkia* initial_render_metafile = print_preview_context_.metafile();
   if (print_preview_context_.IsModifiable() && is_print_ready_metafile_sent_) {
-    draft_metafile.reset(new PdfMetafileSkia(PDF_SKIA_DOCUMENT_TYPE));
+    draft_metafile.reset(new PdfMetafileSkia(SkiaDocumentType::PDF));
     initial_render_metafile = draft_metafile.get();
   }
 
   base::TimeTicks begin_time = base::TimeTicks::Now();
-  PrintPageInternal(page_params,
-                    print_preview_context_.prepared_frame(),
+  PrintPageInternal(page_params, print_preview_context_.prepared_frame(),
                     initial_render_metafile);
-  print_preview_context_.RenderedPreviewPage(
-      base::TimeTicks::Now() - begin_time);
+  print_preview_context_.RenderedPreviewPage(base::TimeTicks::Now() -
+                                             begin_time);
   if (draft_metafile.get()) {
     draft_metafile->FinishDocument();
   } else if (print_preview_context_.IsModifiable() &&
@@ -50,15 +49,14 @@ bool PrintWebViewHelper::RenderPreviewPage(
     DCHECK(!draft_metafile.get());
     draft_metafile =
         print_preview_context_.metafile()->GetMetafileForCurrentPage(
-            PDF_SKIA_DOCUMENT_TYPE);
-
+            SkiaDocumentType::PDF);
   }
   return PreviewPageRendered(page_number, draft_metafile.get());
 }
 
 bool PrintWebViewHelper::PrintPagesNative(blink::WebLocalFrame* frame,
                                           int page_count) {
-  PdfMetafileSkia metafile(PDF_SKIA_DOCUMENT_TYPE);
+  PdfMetafileSkia metafile(SkiaDocumentType::PDF);
   if (!metafile.Init())
     return false;
 
@@ -94,8 +92,8 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebLocalFrame* frame,
   metafile.FinishDocument();
 
   PrintHostMsg_DidPrintPage_Params printed_page_params;
-  if (!CopyMetafileDataToSharedMem(
-          metafile, &printed_page_params.metafile_data_handle)) {
+  if (!CopyMetafileDataToSharedMem(metafile,
+                                   &printed_page_params.metafile_data_handle)) {
     return false;
   }
 
@@ -106,7 +104,7 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebLocalFrame* frame,
     printed_page_params.page_number = printed_pages[i];
     Send(new PrintHostMsg_DidPrintPage(routing_id(), printed_page_params));
     // Send the rest of the pages with an invalid metafile handle.
-    printed_page_params.metafile_data_handle.fd = -1;
+    printed_page_params.metafile_data_handle.Release();
   }
   return true;
 }

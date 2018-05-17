@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "content/public/renderer/content_renderer_client.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 namespace atom {
 
@@ -17,15 +18,20 @@ class PreferencesManager;
 class RendererClientBase : public content::ContentRendererClient {
  public:
   RendererClientBase();
-  virtual ~RendererClientBase();
+  ~RendererClientBase() override;
 
-  virtual void DidCreateScriptContext(
-      v8::Handle<v8::Context> context, content::RenderFrame* render_frame) = 0;
-  virtual void WillReleaseScriptContext(
-      v8::Handle<v8::Context> context, content::RenderFrame* render_frame) = 0;
+  virtual void DidCreateScriptContext(v8::Handle<v8::Context> context,
+                                      content::RenderFrame* render_frame) = 0;
+  virtual void WillReleaseScriptContext(v8::Handle<v8::Context> context,
+                                        content::RenderFrame* render_frame) = 0;
   virtual void DidClearWindowObject(content::RenderFrame* render_frame);
   virtual void SetupMainWorldOverrides(v8::Handle<v8::Context> context) = 0;
-  virtual bool isolated_world() = 0;
+
+  bool isolated_world() const { return isolated_world_; }
+
+  // Get the context that the Electron API is running in.
+  v8::Local<v8::Context> GetContext(blink::WebLocalFrame* frame,
+                                    v8::Isolate* isolate) const;
 
  protected:
   void AddRenderBindings(v8::Isolate* isolate,
@@ -35,10 +41,9 @@ class RendererClientBase : public content::ContentRendererClient {
   void RenderThreadStarted() override;
   void RenderFrameCreated(content::RenderFrame*) override;
   void RenderViewCreated(content::RenderView*) override;
-  blink::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
+  std::unique_ptr<blink::WebSpeechSynthesizer> OverrideSpeechSynthesizer(
       blink::WebSpeechSynthesizerClient* client) override;
   bool OverrideCreatePlugin(content::RenderFrame* render_frame,
-                            blink::WebLocalFrame* frame,
                             const blink::WebPluginParams& params,
                             blink::WebPlugin** plugin) override;
   content::BrowserPluginDelegate* CreateBrowserPluginDelegate(
@@ -51,6 +56,7 @@ class RendererClientBase : public content::ContentRendererClient {
 
  private:
   std::unique_ptr<PreferencesManager> preferences_manager_;
+  bool isolated_world_;
 };
 
 }  // namespace atom

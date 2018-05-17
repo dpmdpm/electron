@@ -15,7 +15,7 @@ namespace atom {
 class AtomMainDelegate : public brightray::MainDelegate {
  public:
   AtomMainDelegate();
-  ~AtomMainDelegate();
+  ~AtomMainDelegate() override;
 
  protected:
   // content::ContentMainDelegate:
@@ -44,7 +44,6 @@ class AtomMainDelegate : public brightray::MainDelegate {
   void SetUpBundleOverrides();
 #endif
 
-  brightray::ContentClient content_client_;
   std::unique_ptr<content::ContentBrowserClient> browser_client_;
   std::unique_ptr<content::ContentRendererClient> renderer_client_;
   std::unique_ptr<content::ContentUtilityClient> utility_client_;

@@ -13,14 +13,12 @@
 
 namespace atom {
 
-NodeDebugger::NodeDebugger(node::Environment* env) : env_(env) {
-}
+NodeDebugger::NodeDebugger(node::Environment* env) : env_(env) {}
 
-NodeDebugger::~NodeDebugger() {
-}
+NodeDebugger::~NodeDebugger() {}
 
-void NodeDebugger::Start() {
-  auto inspector = env_->inspector_agent();
+void NodeDebugger::Start(node::MultiIsolatePlatform* platform) {
+  auto* inspector = env_->inspector_agent();
   if (inspector == nullptr)
     return;
 
@@ -33,20 +31,16 @@ void NodeDebugger::Start() {
 #endif
   }
 
-  if (options.inspector_enabled()) {
-    // Use custom platform since the gin platform does not work correctly
-    // with node's inspector agent
-    platform_.reset(v8::platform::CreateDefaultPlatform());
-
-    // Set process._debugWaitConnect if --inspect-brk was specified to stop
-    // the debugger on the first line
-    if (options.wait_for_connect()) {
-      mate::Dictionary process(env_->isolate(), env_->process_object());
-      process.Set("_debugWaitConnect", true);
-    }
-
-    inspector->Start(platform_.get(), nullptr, options);
+  // Set process._debugWaitConnect if --inspect-brk was specified to stop
+  // the debugger on the first line
+  if (options.wait_for_connect()) {
+    mate::Dictionary process(env_->isolate(), env_->process_object());
+    process.Set("_breakFirstLine", true);
   }
+
+  inspector->Start(static_cast<node::NodePlatform*>(platform), nullptr,
+                   options);
+  DCHECK(env_->inspector_agent()->IsStarted());
 }
 
 }  // namespace atom

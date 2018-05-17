@@ -1,7 +1,12 @@
 {
   'variables': {
     # The libraries brightray will be compiled to.
-    'linux_system_libraries': 'gtk+-2.0 dbus-1 x11 x11-xcb xcb xi xcursor xdamage xrandr xcomposite xext xfixes xrender xtst xscrnsaver gconf-2.0 gmodule-2.0 nss'
+    'linux_system_libraries': 'gtk+-3.0 dbus-1 x11 x11-xcb xcb xi xcursor xdamage xrandr xcomposite xext xfixes xrender xtst xscrnsaver gconf-2.0 gmodule-2.0 nss',
+    'conditions': [
+      ['target_arch=="mips64el"', {
+        'linux_system_libraries': '<(linux_system_libraries) libpulse',
+      }],
+    ],
   },
   'includes': [
     'filenames.gypi',
@@ -16,8 +21,10 @@
         '<(libchromiumcontent_src_dir)/skia/config',
         '<(libchromiumcontent_src_dir)/third_party/boringssl/src/include',
         '<(libchromiumcontent_src_dir)/third_party/skia/include/core',
+        '<(libchromiumcontent_src_dir)/third_party/skia/include/gpu',
         '<(libchromiumcontent_src_dir)/third_party/mojo/src',
         '<(libchromiumcontent_src_dir)/third_party/WebKit',
+        '<(libchromiumcontent_src_dir)/third_party/khronos',
         '<(libchromiumcontent_dir)/gen',
       ],
       'direct_dependent_settings': {
@@ -28,6 +35,7 @@
           '<(libchromiumcontent_src_dir)/skia/config',
           '<(libchromiumcontent_src_dir)/third_party/boringssl/src/include',
           '<(libchromiumcontent_src_dir)/third_party/skia/include/core',
+          '<(libchromiumcontent_src_dir)/third_party/skia/include/gpu',
           '<(libchromiumcontent_src_dir)/third_party/skia/include/config',
           '<(libchromiumcontent_src_dir)/third_party/icu/source/common',
           '<(libchromiumcontent_src_dir)/third_party/mojo/src',
@@ -64,26 +72,35 @@
             ],
             'libraries': [
               '-lpthread',
+              '-latomic',
               '<!@(<(pkg-config) --libs-only-l <(linux_system_libraries))',
             ],
           },
           'cflags': [
             '<!@(<(pkg-config) --cflags <(linux_system_libraries))',
-            # Needed by using libgtkui:
-            '-Wno-deprecated-register',
-            '-Wno-sentinel',
-          ],
-          'cflags_cc': [
-            '-Wno-reserved-user-defined-literal',
           ],
           'direct_dependent_settings': {
             'cflags': [
               '<!@(<(pkg-config) --cflags <(linux_system_libraries))',
-              '-Wno-deprecated-register',
-              '-Wno-sentinel',
             ],
           },
           'conditions': [
+            ['clang==1', {
+              'cflags_cc': [
+                '-Wno-reserved-user-defined-literal',
+              ],
+              'cflags': [
+                # Needed by using libgtkui:
+                '-Wno-deprecated-register',
+                '-Wno-sentinel',
+              ],
+              'direct_dependent_settings': {
+                'cflags': [
+                  '-Wno-deprecated-register',
+                  '-Wno-sentinel',
+                ],
+              },
+            }],
             ['libchromiumcontent_component', {
               'link_settings': {
                 'libraries': [
@@ -94,11 +111,16 @@
                   '<(libchromiumcontent_dir)/libdom_keycode_converter.a',
                   '<(libchromiumcontent_dir)/libsystem_wrappers.a',
                   '<(libchromiumcontent_dir)/librtc_base.a',
-                  '<(libchromiumcontent_dir)/librtc_base_approved.a',
+                  '<(libchromiumcontent_dir)/librtc_base_generic.a',
                   '<(libchromiumcontent_dir)/libwebrtc_common.a',
+                  '<(libchromiumcontent_dir)/libinit_webrtc.a',
                   '<(libchromiumcontent_dir)/libyuv.a',
                   '<(libchromiumcontent_dir)/librenderer.a',
                   '<(libchromiumcontent_dir)/libsecurity_state.a',
+                  # components/network_session_configurator/common/
+                  '<(libchromiumcontent_dir)/libcommon.a',
+                  # services/device/wake_lock/power_save_blocker/
+                  '<(libchromiumcontent_dir)/libpower_save_blocker.a',
                   # Friends of libpdf.a:
                   # On Linux we have to use "--whole-archive" to include
                   # all symbols, otherwise there will be plenty of
@@ -107,7 +129,6 @@
                   '<(libchromiumcontent_dir)/libpdf.a',
                   '<(libchromiumcontent_dir)/libppapi_cpp_objects.a',
                   '<(libchromiumcontent_dir)/libppapi_internal_module.a',
-                  '<(libchromiumcontent_dir)/libjpeg.a',
                   '<(libchromiumcontent_dir)/libpdfium.a',
                   '<(libchromiumcontent_dir)/libfdrm.a',
                   '<(libchromiumcontent_dir)/libformfiller.a',
@@ -115,11 +136,10 @@
                   '<(libchromiumcontent_dir)/libfpdfdoc.a',
                   '<(libchromiumcontent_dir)/libfpdftext.a',
                   '<(libchromiumcontent_dir)/libfxcodec.a',
-                  '<(libchromiumcontent_dir)/libfxedit.a',
                   '<(libchromiumcontent_dir)/libfxge.a',
                   '<(libchromiumcontent_dir)/libfxjs.a',
                   '<(libchromiumcontent_dir)/libjavascript.a',
-                  '<(libchromiumcontent_dir)/libpdfwindow.a',
+                  '<(libchromiumcontent_dir)/libpwl.a',
                   '<(libchromiumcontent_dir)/libfx_agg.a',
                   '<(libchromiumcontent_dir)/libfx_lcms2.a',
                   '<(libchromiumcontent_dir)/libfx_libopenjpeg.a',
@@ -140,13 +160,15 @@
                   '-ldl',
                   '-lresolv',
                   '-lfontconfig',
-                  '-lfreetype',
                   '-lexpat',
                 ],
               },
             }],
             ['target_arch=="arm"', {
               'link_settings': {
+                'libraries': [
+                  '<(libchromiumcontent_dir)/libjpeg.a',
+                ],
                 'libraries!': [
                   '<(libchromiumcontent_dir)/libdesktop_capture_differ_sse2.a',
                 ],
@@ -174,12 +196,17 @@
                   '<(libchromiumcontent_dir)/libdesktop_capture.a',
                   '<(libchromiumcontent_dir)/libdom_keycode_converter.a',
                   '<(libchromiumcontent_dir)/librtc_base.a',
-                  '<(libchromiumcontent_dir)/librtc_base_approved.a',
+                  '<(libchromiumcontent_dir)/librtc_base_generic.a',
                   '<(libchromiumcontent_dir)/libsystem_wrappers.a',
                   '<(libchromiumcontent_dir)/libwebrtc_common.a',
+                  '<(libchromiumcontent_dir)/libinit_webrtc.a',
                   '<(libchromiumcontent_dir)/libyuv.a',
                   '<(libchromiumcontent_dir)/librenderer.a',
                   '<(libchromiumcontent_dir)/libsecurity_state.a',
+                  # components/network_session_configurator/common/
+                  '<(libchromiumcontent_dir)/libcommon.a',
+                  # services/device/wake_lock/power_save_blocker/
+                  '<(libchromiumcontent_dir)/libpower_save_blocker.a',
                   # Friends of libpdf.a:
                   '<(libchromiumcontent_dir)/libpdf.a',
                   '<(libchromiumcontent_dir)/libppapi_cpp_objects.a',
@@ -193,13 +220,11 @@
                   '<(libchromiumcontent_dir)/libfpdftext.a',
                   '<(libchromiumcontent_dir)/libfxcodec.a',
                   '<(libchromiumcontent_dir)/libfxcrt.a',
-                  '<(libchromiumcontent_dir)/libfxedit.a',
                   '<(libchromiumcontent_dir)/libfxge.a',
                   '<(libchromiumcontent_dir)/libfxjs.a',
                   '<(libchromiumcontent_dir)/libjavascript.a',
-                  '<(libchromiumcontent_dir)/libpdfwindow.a',
+                  '<(libchromiumcontent_dir)/libpwl.a',
                   '<(libchromiumcontent_dir)/libfx_agg.a',
-                  '<(libchromiumcontent_dir)/libfx_freetype.a',
                   '<(libchromiumcontent_dir)/libfx_lcms2.a',
                   '<(libchromiumcontent_dir)/libfx_libopenjpeg.a',
                   '<(libchromiumcontent_dir)/libfx_zlib.a',
@@ -252,6 +277,48 @@
           ]
         }],  # OS=="mac"
         ['OS=="win"', {
+          'link_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'AdditionalOptions': [
+                  # warning /DELAYLOAD:dll ignored; no imports found from dll
+                  '/ignore:4199',
+                ],
+                'AdditionalDependencies': [
+                  'delayimp.lib',
+                ],
+                'DelayLoadDLLs': [
+                  'wtsapi32.dll',
+                  # content_common.gypi:
+                  'd3d9.dll',
+                  'd3d11.dll',
+                  'dxva2.dll',
+                  # media.gyp:
+                  'mf.dll',
+                  'mfplat.dll',
+                  'mfreadwrite.dll',
+                  # bluetooth.gyp:
+                  'BluetoothApis.dll',
+                  'Bthprops.cpl',
+                  'setupapi.dll',
+                  # base.gyp:
+                  'cfgmgr32.dll',
+                  'powrprof.dll',
+                  'setupapi.dll',
+                  # net_common.gypi:
+                  'crypt32.dll',
+                  'dhcpcsvc.dll',
+                  'rpcrt4.dll',
+                  'secur32.dll',
+                  'urlmon.dll',
+                  'winhttp.dll',
+                  # windows runtime
+                  'API-MS-WIN-CORE-WINRT-L1-1-0.DLL',
+                  'API-MS-WIN-CORE-WINRT-STRING-L1-1-0.DLL',
+                ],
+              },
+            },
+          },
           'conditions': [
             ['libchromiumcontent_component', {
               'link_settings': {
@@ -267,12 +334,17 @@
                   '<(libchromiumcontent_dir)/desktop_capture.lib',
                   '<(libchromiumcontent_dir)/dom_keycode_converter.lib',
                   '<(libchromiumcontent_dir)/rtc_base.lib',
-                  '<(libchromiumcontent_dir)/rtc_base_approved.lib',
+                  '<(libchromiumcontent_dir)/rtc_base_generic.lib',
                   '<(libchromiumcontent_dir)/system_wrappers.lib',
                   '<(libchromiumcontent_dir)/webrtc_common.lib',
+                  '<(libchromiumcontent_dir)/init_webrtc.lib',
                   '<(libchromiumcontent_dir)/libyuv.lib',
                   '<(libchromiumcontent_dir)/renderer.lib',
                   '<(libchromiumcontent_dir)/security_state.lib',
+                  # components/network_session_configurator/common/
+                  '<(libchromiumcontent_dir)/common.lib',
+                  # services/device/wake_lock/power_save_blocker/
+                  '<(libchromiumcontent_dir)/power_save_blocker.lib',
                   # Friends of pdf.lib:
                   '<(libchromiumcontent_dir)/pdf.lib',
                   '<(libchromiumcontent_dir)/ppapi_cpp_objects.lib',
@@ -287,11 +359,10 @@
                   '<(libchromiumcontent_dir)/fpdftext.lib',
                   '<(libchromiumcontent_dir)/fxcodec.lib',
                   '<(libchromiumcontent_dir)/fxcrt.lib',
-                  '<(libchromiumcontent_dir)/fxedit.lib',
                   '<(libchromiumcontent_dir)/fxge.lib',
                   '<(libchromiumcontent_dir)/fxjs.lib',
                   '<(libchromiumcontent_dir)/javascript.lib',
-                  '<(libchromiumcontent_dir)/pdfwindow.lib',
+                  '<(libchromiumcontent_dir)/pwl.lib',
                   '<(libchromiumcontent_dir)/fx_agg.lib',
                   '<(libchromiumcontent_dir)/fx_lcms2.lib',
                   '<(libchromiumcontent_dir)/fx_libopenjpeg.lib',
@@ -326,9 +397,9 @@
                     'AdditionalDependencies': [
                       'advapi32.lib',
                       'dbghelp.lib',
-                      'delayimp.lib',
                       'dwmapi.lib',
                       'gdi32.lib',
+                      'hid.lib',
                       'netapi32.lib',
                       'oleacc.lib',
                       'user32.lib',
@@ -355,35 +426,6 @@
                       'dwrite.lib',
                       # skia/BUILD.gn:
                       'fontsub.lib',
-                    ],
-                    'DelayLoadDLLs': [
-                      'wtsapi32.dll',
-                      # content_common.gypi:
-                      'd3d9.dll',
-                      'd3d11.dll',
-                      'dxva2.dll',
-                      # media.gyp:
-                      'mf.dll',
-                      'mfplat.dll',
-                      'mfreadwrite.dll',
-                      # bluetooth.gyp:
-                      'BluetoothApis.dll',
-                      'Bthprops.cpl',
-                      'setupapi.dll',
-                      # base.gyp:
-                      'cfgmgr32.dll',
-                      'powrprof.dll',
-                      'setupapi.dll',
-                      # net_common.gypi:
-                      'crypt32.dll',
-                      'dhcpcsvc.dll',
-                      'rpcrt4.dll',
-                      'secur32.dll',
-                      'urlmon.dll',
-                      'winhttp.dll',
-                      # windows runtime
-                      'API-MS-WIN-CORE-WINRT-L1-1-0.DLL',
-                      'API-MS-WIN-CORE-WINRT-STRING-L1-1-0.DLL',
                     ],
                   },
                 },

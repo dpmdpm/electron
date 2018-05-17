@@ -12,23 +12,26 @@
 
 #include "atom/browser/native_window.h"
 #include "base/mac/scoped_nsobject.h"
-#include "content/public/browser/render_widget_host.h"
+#include "ui/views/controls/native/native_view_host.h"
 
 @class AtomNSWindow;
 @class AtomNSWindowDelegate;
+@class AtomPreviewItem;
+@class AtomTouchBar;
+@class CustomWindowButtonView;
 @class FullSizeContentView;
 
 namespace atom {
 
-class NativeWindowMac : public NativeWindow,
-                        public content::RenderWidgetHost::InputEventObserver {
+class RootViewMac;
+
+class NativeWindowMac : public NativeWindow {
  public:
-  NativeWindowMac(brightray::InspectableWebContents* inspectable_web_contents,
-                  const mate::Dictionary& options,
-                  NativeWindow* parent);
+  NativeWindowMac(const mate::Dictionary& options, NativeWindow* parent);
   ~NativeWindowMac() override;
 
   // NativeWindow:
+  void SetContentView(views::View* view) override;
   void Close() override;
   void CloseImmediately() override;
   void Focus(bool focus) override;
@@ -38,6 +41,7 @@ class NativeWindowMac : public NativeWindow,
   void Hide() override;
   bool IsVisible() override;
   bool IsEnabled() override;
+  void SetEnabled(bool enable) override;
   void Maximize() override;
   void Unmaximize() override;
   bool IsMaximized() override;
@@ -51,12 +55,13 @@ class NativeWindowMac : public NativeWindow,
   void SetContentSizeConstraints(
       const extensions::SizeConstraints& size_constraints) override;
   void SetResizable(bool resizable) override;
+  void MoveTop() override;
   bool IsResizable() override;
   void SetMovable(bool movable) override;
-  void SetAspectRatio(double aspect_ratio, const gfx::Size& extra_size)
-    override;
-  void PreviewFile(const std::string& path, const std::string& display_name)
-    override;
+  void SetAspectRatio(double aspect_ratio,
+                      const gfx::Size& extra_size) override;
+  void PreviewFile(const std::string& path,
+                   const std::string& display_name) override;
   void CloseFilePreview() override;
   bool IsMovable() override;
   void SetMinimizable(bool minimizable) override;
@@ -67,8 +72,10 @@ class NativeWindowMac : public NativeWindow,
   bool IsFullScreenable() override;
   void SetClosable(bool closable) override;
   bool IsClosable() override;
-  void SetAlwaysOnTop(bool top, const std::string& level,
-                      int relativeLevel, std::string* error) override;
+  void SetAlwaysOnTop(bool top,
+                      const std::string& level,
+                      int relativeLevel,
+                      std::string* error) override;
   bool IsAlwaysOnTop() override;
   void Center() override;
   void Invalidate() override;
@@ -76,16 +83,20 @@ class NativeWindowMac : public NativeWindow,
   std::string GetTitle() override;
   void FlashFrame(bool flash) override;
   void SetSkipTaskbar(bool skip) override;
+  void SetSimpleFullScreen(bool simple_fullscreen) override;
+  bool IsSimpleFullScreen() override;
   void SetKiosk(bool kiosk) override;
   bool IsKiosk() override;
-  void SetBackgroundColor(const std::string& color_name) override;
+  void SetBackgroundColor(SkColor color) override;
   void SetHasShadow(bool has_shadow) override;
   bool HasShadow() override;
+  void SetOpacity(const double opacity) override;
+  double GetOpacity() override;
   void SetRepresentedFilename(const std::string& filename) override;
   std::string GetRepresentedFilename() override;
   void SetDocumentEdited(bool edited) override;
   bool IsDocumentEdited() override;
-  void SetIgnoreMouseEvents(bool ignore) override;
+  void SetIgnoreMouseEvents(bool ignore, bool forward) override;
   void SetContentProtection(bool enable) override;
   void SetBrowserView(NativeBrowserView* browser_view) override;
   void SetParentWindow(NativeWindow* parent) override;
@@ -101,23 +112,21 @@ class NativeWindowMac : public NativeWindow,
 
   void SetAutoHideCursor(bool auto_hide) override;
 
+  void SelectPreviousTab() override;
+  void SelectNextTab() override;
+  void MergeAllWindows() override;
+  void MoveTabToNewWindow() override;
+  void ToggleTabBar() override;
+  bool AddTabbedWindow(NativeWindow* window) override;
+
   void SetVibrancy(const std::string& type) override;
   void SetTouchBar(
       const std::vector<mate::PersistentDictionary>& items) override;
   void RefreshTouchBarItem(const std::string& item_id) override;
   void SetEscapeTouchBarItem(const mate::PersistentDictionary& item) override;
 
-  // content::RenderWidgetHost::InputEventObserver:
-  void OnInputEvent(const blink::WebInputEvent& event) override;
-
-  // content::WebContentsObserver:
-  void RenderViewHostChanged(content::RenderViewHost* old_host,
-                             content::RenderViewHost* new_host) override;
-
-  // Refresh the DraggableRegion views.
-  void UpdateDraggableRegionViews() {
-    UpdateDraggableRegionViews(draggable_regions_);
-  }
+  gfx::Rect ContentBoundsToWindowBounds(const gfx::Rect& bounds) const override;
+  gfx::Rect WindowBoundsToContentBounds(const gfx::Rect& bounds) const override;
 
   // Set the attribute of NSWindow while work around a bug of zoom button.
   void SetStyleMask(bool on, NSUInteger flag);
@@ -131,55 +140,44 @@ class NativeWindowMac : public NativeWindow,
   };
   TitleBarStyle title_bar_style() const { return title_bar_style_; }
 
+  AtomPreviewItem* preview_item() const { return preview_item_.get(); }
+  AtomTouchBar* touch_bar() const { return touch_bar_.get(); }
   bool zoom_to_page_width() const { return zoom_to_page_width_; }
-
   bool fullscreen_window_title() const { return fullscreen_window_title_; }
+  bool simple_fullscreen() const { return always_simple_fullscreen_; }
 
  protected:
-  // Return a vector of non-draggable regions that fill a window of size
-  // |width| by |height|, but leave gaps where the window should be draggable.
-  std::vector<gfx::Rect> CalculateNonDraggableRegions(
-      const std::vector<DraggableRegion>& regions, int width, int height);
+  // views::WidgetDelegate:
+  bool CanResize() const override;
+  views::View* GetContentsView() override;
 
  private:
-  // NativeWindow:
-  gfx::Rect ContentBoundsToWindowBounds(const gfx::Rect& bounds) const;
-  gfx::Rect WindowBoundsToContentBounds(const gfx::Rect& bounds) const;
-  void UpdateDraggableRegions(
-      const std::vector<DraggableRegion>& regions) override;
-
+  void InternalSetParentWindow(NativeWindow* parent, bool attach);
   void ShowWindowButton(NSWindowButton button);
 
-  void InstallView();
-  void UninstallView();
+  void SetForwardMouseMessages(bool forward);
 
-  // Install the drag view, which will cover the whole window and decides
-  // whehter we can drag.
-  void UpdateDraggableRegionViews(const std::vector<DraggableRegion>& regions);
+  AtomNSWindow* window_;  // Weak ref, managed by widget_.
 
-  void RegisterInputEventObserver(content::RenderViewHost* host);
-  void UnregisterInputEventObserver(content::RenderViewHost* host);
-
-  base::scoped_nsobject<AtomNSWindow> window_;
   base::scoped_nsobject<AtomNSWindowDelegate> window_delegate_;
+  base::scoped_nsobject<AtomPreviewItem> preview_item_;
+  base::scoped_nsobject<AtomTouchBar> touch_bar_;
+  base::scoped_nsobject<CustomWindowButtonView> buttons_view_;
 
   // Event monitor for scroll wheel event.
   id wheel_event_monitor_;
 
   // The view that will fill the whole frameless window.
-  base::scoped_nsobject<FullSizeContentView> content_view_;
+  base::scoped_nsobject<FullSizeContentView> container_view_;
 
-  NativeBrowserView* browser_view_;
-
-  std::vector<DraggableRegion> draggable_regions_;
+  // The view that fills the client area.
+  std::unique_ptr<RootViewMac> root_view_;
 
   bool is_kiosk_;
-
   bool was_fullscreen_;
-
   bool zoom_to_page_width_;
-
   bool fullscreen_window_title_;
+  bool resizable_;
 
   NSInteger attention_request_id_;  // identifier from requestUserAttention
 
@@ -188,6 +186,20 @@ class NativeWindowMac : public NativeWindow,
 
   // The "titleBarStyle" option.
   TitleBarStyle title_bar_style_;
+
+  // Simple (pre-Lion) Fullscreen Settings
+  bool always_simple_fullscreen_;
+  bool is_simple_fullscreen_;
+  bool was_maximizable_;
+  bool was_movable_;
+  NSRect original_frame_;
+  NSUInteger simple_fullscreen_mask_;
+
+  base::scoped_nsobject<NSColor> background_color_before_vibrancy_;
+  bool transparency_before_vibrancy_;
+
+  // The presentation options before entering simple fullscreen mode.
+  NSApplicationPresentationOptions simple_fullscreen_options_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeWindowMac);
 };

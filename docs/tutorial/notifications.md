@@ -45,7 +45,7 @@ main process or the renderer process), use the userland module
 [electron-windows-notifications](https://github.com/felixrieseberg/electron-windows-notifications),
 which uses native Node addons to send `ToastNotification` and `TileNotification` objects.
 
-While notifications including buttons work with just `electron-windows-notifications`,
+While notifications including buttons work with `electron-windows-notifications`,
 handling replies requires the use of [`electron-windows-interactive-notifications`](https://github.com/felixrieseberg/electron-windows-interactive-notifications), which
 helps with registering the required COM components and calling your Electron app with
 the entered user data.
@@ -85,3 +85,6 @@ Notifications are sent using `libnotify` which can show notifications on any
 desktop environment that follows [Desktop Notifications
 Specification][notification-spec], including Cinnamon, Enlightenment, Unity,
 GNOME, KDE.
+
+[notification-spec]: https://developer.gnome.org/notification-spec/
+[app-user-model-id]: https://msdn.microsoft.com/en-us/library/windows/desktop/dd378459(v=vs.85).aspx
